@@ -2,7 +2,7 @@
 {% load chamado_extras %}
 {% block title %}Histórico de chamados{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
     <h1 class="h3 m-0"><i class="bi bi-clock-history"></i> Histórico de chamados</h1>
 </div>
 
@@ -12,7 +12,7 @@
     {% if q %}<a href="{% url 'chamados:historico' %}" class="btn btn-outline-secondary">Limpar</a>{% endif %}
 </form>
 
-<div class="hd-card p-0">
+<div class="hd-card p-0 table-responsive">
     <table class="table hd-table table-hover align-middle mb-0">
         <thead>
             <tr>

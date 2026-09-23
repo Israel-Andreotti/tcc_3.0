@@ -42,6 +42,17 @@ body {
     opacity: 1;
 }
 
+.hd-navbar-userinfo {
+    border-top: 1px solid rgba(255, 255, 255, .15);
+}
+
+@media (min-width: 992px) {
+    .hd-navbar-userinfo {
+        border-top: 0;
+        border-left: 1px solid rgba(255, 255, 255, .25);
+    }
+}
+
 /* Cards */
 .hd-card {
     background: var(--hd-surface);
