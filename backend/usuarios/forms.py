@@ -1,7 +1,7 @@
 from django import forms
 from django.contrib.auth.forms import AuthenticationForm, PasswordChangeForm
 
-from .models import Usuario
+from .models import Setor, Usuario
 
 
 class LoginForm(AuthenticationForm):
@@ -43,3 +43,13 @@ class UsuarioCadastroForm(forms.ModelForm):
         for campo in ('first_name', 'last_name', 'email'):
             self.fields[campo].required = True
         self.fields['setor'].empty_label = 'Selecione um setor'
+
+
+class SetorForm(forms.ModelForm):
+    class Meta:
+        model = Setor
+        fields = ['nome']
+        labels = {'nome': 'Nome do setor'}
+        widgets = {
+            'nome': forms.TextInput(attrs={'class': 'form-control', 'autofocus': True}),
+        }

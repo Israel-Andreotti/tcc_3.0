@@ -7,10 +7,10 @@ from django.urls import reverse_lazy
 from django.utils.crypto import get_random_string
 from django.views.generic import CreateView, ListView, View
 
-from core.mixins import AtendenteRequiredMixin
+from core.mixins import AdministradorRequiredMixin, AtendenteRequiredMixin
 
-from .forms import LoginForm, TrocarSenhaForm, UsuarioCadastroForm
-from .models import Usuario
+from .forms import LoginForm, SetorForm, TrocarSenhaForm, UsuarioCadastroForm
+from .models import Setor, Usuario
 
 SENHA_TEMPORARIA_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789'
 
@@ -122,3 +122,24 @@ class UsuarioResetarSenhaView(AtendenteRequiredMixin, View):
             'senha_temporaria': senha_temporaria,
             'reset_senha': True,
         })
+
+
+class SetorListView(AdministradorRequiredMixin, ListView):
+    model = Setor
+    template_name = 'usuarios/setor_list.html'
+    context_object_name = 'setores'
+
+    def get_queryset(self):
+        return Setor.objects.order_by('nome')
+
+
+class SetorCadastroView(AdministradorRequiredMixin, CreateView):
+    model = Setor
+    form_class = SetorForm
+    template_name = 'usuarios/setor_form.html'
+    success_url = reverse_lazy('usuarios:setores')
+
+    def form_valid(self, form):
+        response = super().form_valid(form)
+        messages.success(self.request, f'Setor "{self.object}" cadastrado.')
+        return response
