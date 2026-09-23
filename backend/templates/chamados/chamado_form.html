@@ -1,0 +1,52 @@
+{% extends 'base.html' %}
+{% block title %}Abrir chamado{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <h1 class="h3 mb-1"><i class="bi bi-plus-circle"></i> Abrir chamado</h1>
+        <p class="text-muted-hd mb-3">Abrindo chamado como <strong>{{ user.get_full_name|default:user.username }}</strong></p>
+        <div class="hd-card">
+            <form method="post" enctype="multipart/form-data">
+                {% csrf_token %}
+                {% for field in form %}
+                <div class="mb-3">
+                    <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    {{ field }}
+                    {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+                    {% if field.errors %}<div class="text-danger small">{{ field.errors }}</div>{% endif %}
+                </div>
+                {% endfor %}
+                <button type="submit" class="btn btn-primary"><i class="bi bi-send"></i> Abrir chamado</button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    var categoriaSelect = document.getElementById('id_categoria');
+    var subcategoriaSelect = document.getElementById('id_subcategoria');
+    if (!categoriaSelect || !subcategoriaSelect) return;
+
+    var todasAsOpcoes = Array.prototype.slice.call(subcategoriaSelect.options);
+
+    function filtrarSubcategorias() {
+        var categoriaId = categoriaSelect.value;
+        var valorAtual = subcategoriaSelect.value;
+        subcategoriaSelect.innerHTML = '';
+        todasAsOpcoes.forEach(function (opcao) {
+            var pertenceCategoria = !opcao.value || opcao.getAttribute('data-categoria') === categoriaId;
+            if (pertenceCategoria) {
+                subcategoriaSelect.appendChild(opcao);
+            }
+        });
+        if (subcategoriaSelect.querySelector('option[value="' + valorAtual + '"]')) {
+            subcategoriaSelect.value = valorAtual;
+        }
+    }
+
+    categoriaSelect.addEventListener('change', filtrarSubcategorias);
+    filtrarSubcategorias();
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,60 @@
+{% extends 'base.html' %}
+{% block title %}{% if reset_senha %}Senha redefinida{% else %}Usuário cadastrado{% endif %}{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="hd-card text-center mb-4">
+            <div class="hd-login-icon"><i class="bi bi-check-lg"></i></div>
+            <h1 class="h4 mb-1">{% if reset_senha %}Senha redefinida com sucesso{% else %}Usuário cadastrado com sucesso{% endif %}</h1>
+            <p class="text-muted-hd mb-0">{{ usuario }}</p>
+        </div>
+
+        {% if not reset_senha %}
+        <div class="hd-card mb-4">
+            <h2 class="h6 text-uppercase text-muted-hd mb-3">Matrícula atribuída</h2>
+            <div class="display-6 fw-bold text-center py-2">{{ usuario.matricula }}</div>
+        </div>
+        {% endif %}
+
+        <div class="hd-card mb-4">
+            <h2 class="h6 text-uppercase text-muted-hd mb-3">Credenciais de acesso</h2>
+            <div class="alert alert-warning small mb-3">
+                <i class="bi bi-exclamation-triangle"></i> A senha abaixo é exibida <strong>apenas uma vez</strong>. Repasse ao usuário e peça para alterá-la no primeiro acesso.
+            </div>
+            <dl class="mb-0">
+                <dt class="text-muted-hd small">Usuário (login)</dt>
+                <dd>{{ usuario.username }}</dd>
+                <dt class="text-muted-hd small">Senha temporária</dt>
+                <dd class="fs-5 font-monospace mb-0">{{ senha_temporaria }}</dd>
+            </dl>
+        </div>
+
+        {% if not reset_senha %}
+        <div class="hd-card mb-4">
+            <h2 class="h6 text-uppercase text-muted-hd mb-3">Dados cadastrados</h2>
+            <dl class="mb-0">
+                <dt class="text-muted-hd small">Nome completo</dt>
+                <dd>{{ usuario.get_full_name }}</dd>
+                <dt class="text-muted-hd small">Perfil</dt>
+                <dd>{{ usuario.get_perfil_display }}</dd>
+                <dt class="text-muted-hd small">Setor</dt>
+                <dd>{{ usuario.setor|default:'-' }}</dd>
+                <dt class="text-muted-hd small">E-mail</dt>
+                <dd>{{ usuario.email|default:'-' }}</dd>
+                <dt class="text-muted-hd small">Telefone</dt>
+                <dd class="mb-0">{{ usuario.telefone|default:'-' }}</dd>
+            </dl>
+        </div>
+        {% endif %}
+
+        <div class="d-flex gap-2">
+            {% if reset_senha %}
+            <a href="{% url 'usuarios:list' %}" class="btn btn-primary"><i class="bi bi-people"></i> Voltar para usuários</a>
+            {% else %}
+            <a href="{% url 'usuarios:cadastrar' %}" class="btn btn-primary"><i class="bi bi-person-plus"></i> Cadastrar outro usuário</a>
+            {% endif %}
+            <a href="{% url 'chamados:list' %}" class="btn btn-outline-secondary">Voltar para a fila</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

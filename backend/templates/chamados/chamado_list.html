@@ -1,0 +1,74 @@
+{% extends 'base.html' %}
+{% load chamado_extras %}
+{% block title %}Fila de chamados{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h1 class="h3 m-0">{% if user.perfil == 'solicitante' %}Meus chamados{% else %}Fila de chamados{% endif %}</h1>
+        <p class="text-muted-hd mb-0 small">{{ chamados|length }} chamado{{ chamados|length|pluralize }} em aberto</p>
+    </div>
+    {% if user.perfil == 'solicitante' %}
+    <a href="{% url 'chamados:create' %}" class="btn btn-primary"><i class="bi bi-plus-circle"></i> Abrir chamado</a>
+    {% endif %}
+</div>
+
+<div class="hd-card p-0">
+    <table class="table hd-table table-hover align-middle mb-0">
+        <thead>
+            <tr>
+                <th class="ps-3">#</th>
+                <th>Título</th>
+                <th>Categoria</th>
+                <th>Status</th>
+                <th>Prioridade</th>
+                <th>Solicitante</th>
+                <th>Atendente</th>
+                <th class="pe-3">Criado em</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for chamado in chamados %}
+            <tr class="clickable-row" data-href="{% url 'chamados:detail' chamado.pk %}">
+                <td class="ps-3">#{{ chamado.pk }}</td>
+                <td>{{ chamado.titulo }}</td>
+                <td>{{ chamado.subcategoria.nome|default:chamado.categoria|default:'-' }}</td>
+                <td><span class="badge {{ chamado.status|status_badge }}">{{ chamado.get_status_display }}</span></td>
+                <td>
+                    <span class="badge {{ chamado.prioridade|prioridade_badge }}">{{ chamado.get_prioridade_display }}</span>
+                    {% if chamado.sla_estourado %}<i class="bi bi-exclamation-triangle-fill text-danger" title="SLA estourado"></i>{% endif %}
+                </td>
+                <td>
+                    {{ chamado.solicitante.get_full_name|default:chamado.solicitante.username }}
+                    {% include 'chamados/_usuario_info_icon.html' with usuario=chamado.solicitante %}
+                </td>
+                <td>
+                    {% if chamado.atendente %}
+                    {{ chamado.atendente.get_full_name|default:chamado.atendente.username }}
+                    {% include 'chamados/_usuario_info_icon.html' with usuario=chamado.atendente %}
+                    {% else %}
+                    -
+                    {% endif %}
+                </td>
+                <td class="pe-3">{{ chamado.criado_em|date:'d/m/Y H:i' }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="8" class="text-center text-muted-hd py-5">Nenhum chamado encontrado.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% if is_paginated %}
+<nav class="mt-3">
+    <ul class="pagination">
+        {% if page_obj.has_previous %}
+        <li class="page-item"><a class="page-link" href="?page={{ page_obj.previous_page_number }}">Anterior</a></li>
+        {% endif %}
+        <li class="page-item disabled"><span class="page-link">{{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span></li>
+        {% if page_obj.has_next %}
+        <li class="page-item"><a class="page-link" href="?page={{ page_obj.next_page_number }}">Próxima</a></li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+{% endblock %}

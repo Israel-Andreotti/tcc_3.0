@@ -1,0 +1,84 @@
+{% extends 'base.html' %}
+{% block title %}Usuários{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h3 m-0"><i class="bi bi-people"></i> Usuários</h1>
+    <a href="{% url 'usuarios:cadastrar' %}" class="btn btn-primary"><i class="bi bi-person-plus"></i> Cadastrar usuário</a>
+</div>
+
+<form method="get" class="mb-3 d-flex gap-2">
+    <input type="text" name="q" value="{{ q }}" class="form-control" placeholder="Buscar por nome, usuário ou matrícula...">
+    <button type="submit" class="btn btn-outline-primary"><i class="bi bi-search"></i> Buscar</button>
+    {% if q %}<a href="{% url 'usuarios:list' %}" class="btn btn-outline-secondary">Limpar</a>{% endif %}
+</form>
+
+<div class="hd-card p-0">
+    <table class="table hd-table align-middle mb-0">
+        <thead>
+            <tr>
+                <th class="ps-3">Matrícula</th>
+                <th>Nome</th>
+                <th>Usuário</th>
+                <th>Perfil</th>
+                <th>Setor</th>
+                <th>Status</th>
+                <th class="pe-3 text-end">Ações</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for usuario in usuarios %}
+            <tr>
+                <td class="ps-3">{{ usuario.matricula }}</td>
+                <td>{{ usuario.get_full_name|default:'-' }}</td>
+                <td>{{ usuario.username }}</td>
+                <td>{{ usuario.get_perfil_display }}</td>
+                <td>{{ usuario.setor|default:'-' }}</td>
+                <td>
+                    {% if usuario.is_active %}
+                    <span class="badge status-resolvido">Ativo</span>
+                    {% else %}
+                    <span class="badge status-fechado">Inativo</span>
+                    {% endif %}
+                </td>
+                <td class="pe-3">
+                    <div class="d-flex gap-2 justify-content-end">
+                        <form method="post" action="{% url 'usuarios:resetar_senha' usuario.pk %}" class="m-0"
+                              onsubmit="return confirm('Gerar uma nova senha temporária para {{ usuario }}?');">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-outline-secondary btn-sm"><i class="bi bi-key"></i> Resetar senha</button>
+                        </form>
+                        {% if usuario != request.user %}
+                        <form method="post" action="{% url 'usuarios:toggle_ativo' usuario.pk %}" class="m-0"
+                              onsubmit="return confirm('{% if usuario.is_active %}Desativar{% else %}Reativar{% endif %} {{ usuario }}?');">
+                            {% csrf_token %}
+                            {% if usuario.is_active %}
+                            <button type="submit" class="btn btn-outline-danger btn-sm"><i class="bi bi-slash-circle"></i> Desativar</button>
+                            {% else %}
+                            <button type="submit" class="btn btn-outline-success btn-sm"><i class="bi bi-check-circle"></i> Reativar</button>
+                            {% endif %}
+                        </form>
+                        {% endif %}
+                    </div>
+                </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="7" class="text-center text-muted-hd py-5">Nenhum usuário encontrado.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% if is_paginated %}
+<nav class="mt-3">
+    <ul class="pagination">
+        {% if page_obj.has_previous %}
+        <li class="page-item"><a class="page-link" href="?q={{ q }}&page={{ page_obj.previous_page_number }}">Anterior</a></li>
+        {% endif %}
+        <li class="page-item disabled"><span class="page-link">{{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span></li>
+        {% if page_obj.has_next %}
+        <li class="page-item"><a class="page-link" href="?q={{ q }}&page={{ page_obj.next_page_number }}">Próxima</a></li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+{% endblock %}

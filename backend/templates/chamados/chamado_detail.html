@@ -1,0 +1,144 @@
+{% extends 'base.html' %}
+{% load chamado_extras %}
+{% block title %}Chamado #{{ chamado.pk }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-3">
+    <div>
+        <a href="{% url 'chamados:list' %}" class="text-decoration-none small text-muted-hd"><i class="bi bi-arrow-left"></i> Voltar</a>
+        <h1 class="h3 mb-2 mt-1"><span class="hd-ticket-id">#{{ chamado.pk }}</span> {{ chamado.titulo }}</h1>
+        <span class="badge {{ chamado.status|status_badge }}">{{ chamado.get_status_display }}</span>
+        <span class="badge {{ chamado.prioridade|prioridade_badge }}">{{ chamado.get_prioridade_display }}</span>
+        {% if chamado.sla_estourado %}<span class="badge status-fechado bg-danger text-white"><i class="bi bi-exclamation-triangle-fill"></i> SLA estourado</span>{% endif %}
+    </div>
+    {% if pode_gerenciar %}
+    <div class="d-flex gap-2">
+        {% if not chamado.atendente %}
+        <form method="post" action="{% url 'chamados:pegar' chamado.pk %}" class="m-0">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-success btn-sm"><i class="bi bi-hand-index-thumb"></i> Pegar chamado</button>
+        </form>
+        {% endif %}
+        <a href="{% url 'chamados:gerenciar' chamado.pk %}" class="btn btn-primary btn-sm"><i class="bi bi-pencil-square"></i> Gerenciar</a>
+    </div>
+    {% endif %}
+</div>
+
+<div class="row mb-4">
+    <div class="col-lg-6">
+        <div class="hd-card h-100 d-flex flex-column justify-content-center">
+            <h2 class="h6 text-uppercase text-muted-hd mb-3">Solicitante</h2>
+            <div class="d-flex align-items-center gap-3">
+                <div class="hd-avatar"><i class="bi bi-person-fill"></i></div>
+                <div>
+                    <div class="fw-semibold">{{ chamado.solicitante }}</div>
+                    <div class="small text-muted-hd mt-1"><i class="bi bi-diagram-3"></i> {{ chamado.setor|default:'Setor não informado' }}</div>
+                    {% if chamado.solicitante.email %}<div class="small text-muted-hd mt-1"><i class="bi bi-envelope"></i> {{ chamado.solicitante.email }}</div>{% endif %}
+                    {% if chamado.solicitante.telefone %}<div class="small text-muted-hd mt-1"><i class="bi bi-telephone"></i> {{ chamado.solicitante.telefone }}</div>{% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-6">
+        <div class="hd-card h-100 d-flex flex-column justify-content-center">
+            <h2 class="h6 text-uppercase text-muted-hd mb-3">Detalhes do chamado</h2>
+            <dl class="mb-0">
+                <dt class="text-muted-hd small">Categoria</dt>
+                <dd>{{ chamado.categoria|default:'-' }}{% if chamado.subcategoria %} &rsaquo; {{ chamado.subcategoria.nome }}{% endif %}</dd>
+                <dt class="text-muted-hd small">Atendente</dt>
+                <dd>{{ chamado.atendente|default:'Não atribuído' }}</dd>
+                <dt class="text-muted-hd small">Aberto em</dt>
+                <dd>{{ chamado.criado_em|date:'d/m/Y H:i' }}</dd>
+                <dt class="text-muted-hd small">Prazo SLA</dt>
+                <dd class="mb-0">
+                    {% if chamado.sla_concluido %}
+                    <span class="text-muted-hd">{{ chamado.prazo_sla|date:'d/m/Y H:i' }} &middot; encerrado</span>
+                    {% else %}
+                    <div class="d-flex justify-content-between small mb-1">
+                        <span class="sla-tempo sla-{{ chamado.sla_cor }} fw-semibold">{{ chamado.sla_tempo_restante_display }}</span>
+                        <span class="text-muted-hd">{{ chamado.prazo_sla|date:'d/m/Y H:i' }}</span>
+                    </div>
+                    <div class="sla-bar-track">
+                        <div class="sla-bar-fill sla-{{ chamado.sla_cor }}" style="width: {{ chamado.sla_percentual }}%"></div>
+                    </div>
+                    {% endif %}
+                </dd>
+            </dl>
+        </div>
+    </div>
+</div>
+
+<div class="hd-card mb-4">
+    <h2 class="h6 text-uppercase text-muted-hd mb-2">Descrição</h2>
+    <p class="mb-0">{{ chamado.descricao|linebreaks }}</p>
+
+    {% if chamado.anexos.all %}
+    <hr>
+    <h2 class="h6 text-uppercase text-muted-hd mb-2">Anexos</h2>
+    <div class="d-flex flex-wrap gap-2">
+        {% for anexo in chamado.anexos.all %}
+        <a href="{{ anexo.arquivo.url }}" target="_blank" rel="noopener" title="{{ anexo.nome }}">
+            {% if anexo.is_imagem %}
+            <img src="{{ anexo.arquivo.url }}" alt="{{ anexo.nome }}" class="hd-anexo-thumb">
+            {% else %}
+            <span class="hd-anexo-file"><i class="bi bi-file-earmark-text"></i><span class="small text-truncate w-100">{{ anexo.nome }}</span></span>
+            {% endif %}
+        </a>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+
+<div class="hd-card mb-4">
+    <h2 class="h6 text-uppercase text-muted-hd mb-3">Procedimento</h2>
+    <ul class="hd-timeline">
+        {% for entrada in procedimentos %}
+        <li class="hd-timeline-item">
+            <div class="hd-timeline-marker {% if entrada.tipo == 'interno' %}marker-interno{% else %}marker-publico{% endif %}">
+                {% if entrada.tipo == 'interno' %}<i class="bi bi-eye-slash"></i>{% else %}<i class="bi bi-check2-circle"></i>{% endif %}
+            </div>
+            <div class="hd-timeline-content">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-1 mb-1">
+                    {% if entrada.tipo == 'interno' %}
+                    <span class="badge status-aguardando">Nota interna</span>
+                    {% else %}
+                    <span class="badge status-resolvido">Procedimento</span>
+                    {% endif %}
+                    <span class="small text-muted-hd">{{ entrada.autor }} &middot; {{ entrada.criado_em|date:'d/m/Y H:i' }}</span>
+                </div>
+                <div>{{ entrada.texto|linebreaks }}</div>
+            </div>
+        </li>
+        {% empty %}
+        <li class="text-muted-hd">Nenhum procedimento registrado ainda.</li>
+        {% endfor %}
+    </ul>
+
+    {% if pode_gerenciar %}
+    <div class="d-flex flex-column flex-md-row gap-3 align-items-md-end border-top pt-3">
+        <form method="post" action="{% url 'chamados:procedimento_add' chamado.pk %}" class="flex-grow-1">
+            {% csrf_token %}
+            <div class="btn-group mb-2" role="group">
+                <button type="button" class="btn btn-outline-primary btn-sm active" data-tipo-btn data-value="publico">
+                    <i class="bi bi-check2-circle"></i> Procedimento
+                </button>
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-tipo-btn data-value="interno">
+                    <i class="bi bi-eye-slash"></i> Nota interna
+                </button>
+            </div>
+            <div class="form-text mb-2">Procedimento fica visível para o solicitante; nota interna é restrita à equipe técnica.</div>
+            {{ procedimento_form.tipo }}
+            {{ procedimento_form.texto }}
+            <div class="d-flex gap-2 mt-2">
+                <button type="submit" class="btn btn-primary"><i class="bi bi-send"></i> Registrar</button>
+                {% if chamado.status != 'resolvido' and chamado.status != 'fechado' %}
+                <button type="submit" formaction="{% url 'chamados:concluir' chamado.pk %}" formnovalidate class="btn btn-success">
+                    <i class="bi bi-check-circle-fill"></i> Resolver chamado
+                </button>
+                {% endif %}
+            </div>
+        </form>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,276 @@
+:root {
+    --hd-primary: #2563eb;
+    --hd-primary-dark: #1d4ed8;
+    --hd-bg: #f4f6fb;
+    --hd-surface: #ffffff;
+    --hd-text: #1e293b;
+    --hd-text-muted: #64748b;
+    --hd-border: #e2e8f0;
+    --hd-navbar: #111827;
+}
+
+body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background-color: var(--hd-bg);
+    color: var(--hd-text);
+}
+
+/* Navbar */
+.navbar.hd-navbar {
+    background-color: var(--hd-navbar) !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, .15);
+}
+
+.hd-navbar .navbar-brand {
+    font-weight: 700;
+    letter-spacing: .02em;
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+}
+
+.hd-navbar .navbar-brand .bi {
+    color: var(--hd-primary);
+}
+
+.hd-navbar .nav-link {
+    font-weight: 500;
+    opacity: .85;
+}
+
+.hd-navbar .nav-link:hover {
+    opacity: 1;
+}
+
+/* Cards */
+.hd-card {
+    background: var(--hd-surface);
+    border: 1px solid var(--hd-border);
+    border-radius: .75rem;
+    padding: 1.5rem;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, .04);
+}
+
+/* Botões */
+.btn-primary {
+    background-color: var(--hd-primary);
+    border-color: var(--hd-primary);
+}
+
+.btn-primary:hover,
+.btn-primary:focus {
+    background-color: var(--hd-primary-dark);
+    border-color: var(--hd-primary-dark);
+}
+
+.btn-outline-primary {
+    color: var(--hd-primary);
+    border-color: var(--hd-primary);
+}
+
+.btn-outline-primary:hover {
+    background-color: var(--hd-primary);
+    border-color: var(--hd-primary);
+}
+
+/* Tabela */
+.hd-table thead th {
+    text-transform: uppercase;
+    font-size: .72rem;
+    letter-spacing: .04em;
+    color: var(--hd-text-muted);
+    border-bottom-width: 1px;
+    background-color: #f8fafc;
+}
+
+.hd-table tbody tr:hover {
+    background-color: #f8fafc;
+}
+
+.hd-table tbody tr.clickable-row {
+    cursor: pointer;
+}
+
+/* Badges de status */
+.badge.status-aberto { background-color: #dbeafe; color: #1d4ed8; }
+.badge.status-andamento { background-color: #fef3c7; color: #b45309; }
+.badge.status-aguardando { background-color: #ede9fe; color: #6d28d9; }
+.badge.status-resolvido { background-color: #dcfce7; color: #15803d; }
+.badge.status-fechado { background-color: #e2e8f0; color: #475569; }
+
+/* Badges de prioridade */
+.badge.prioridade-baixa { background-color: #dcfce7; color: #15803d; }
+.badge.prioridade-media { background-color: #dbeafe; color: #1d4ed8; }
+.badge.prioridade-alta { background-color: #ffedd5; color: #c2410c; }
+.badge.prioridade-critica { background-color: #fee2e2; color: #b91c1c; }
+
+.badge {
+    font-weight: 600;
+    font-size: .72rem;
+    padding: .4em .65em;
+}
+
+/* Login */
+.hd-login-page {
+    min-height: calc(100vh - 2rem);
+    display: flex;
+    align-items: center;
+}
+
+.hd-login-icon {
+    width: 56px;
+    height: 56px;
+    border-radius: 14px;
+    background: linear-gradient(135deg, var(--hd-primary), #60a5fa);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 1.6rem;
+    margin: 0 auto 1rem;
+}
+
+.text-muted-hd {
+    color: var(--hd-text-muted) !important;
+}
+
+/* Avatar do solicitante */
+.hd-avatar {
+    width: 48px;
+    height: 48px;
+    min-width: 48px;
+    border-radius: 50%;
+    background: #dbeafe;
+    color: var(--hd-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.3rem;
+}
+
+/* Sidebar de detalhes do chamado */
+.hd-card dl dt {
+    margin-top: .75rem;
+}
+
+.hd-card dl dt:first-child {
+    margin-top: 0;
+}
+
+.hd-card dl dd {
+    margin-bottom: 0;
+}
+
+/* Barra de progresso do prazo de SLA */
+.sla-bar-track {
+    height: 8px;
+    background-color: var(--hd-border);
+    border-radius: 999px;
+    overflow: hidden;
+}
+
+.sla-bar-fill {
+    height: 100%;
+    border-radius: 999px;
+    transition: width .3s ease;
+}
+
+.sla-bar-fill.sla-ok { background-color: #22c55e; }
+.sla-bar-fill.sla-atencao { background-color: #f59e0b; }
+.sla-bar-fill.sla-critico { background-color: #ef4444; }
+
+.sla-tempo.sla-ok { color: #15803d; }
+.sla-tempo.sla-atencao { color: #b45309; }
+.sla-tempo.sla-critico { color: #b91c1c; }
+
+/* Título com hierarquia entre ID e texto */
+.hd-ticket-id {
+    color: var(--hd-text-muted);
+    font-weight: 500;
+}
+
+/* Timeline de procedimento */
+.hd-timeline {
+    position: relative;
+    list-style: none;
+    padding-left: 2.75rem;
+    margin: 0 0 1rem;
+}
+
+.hd-timeline::before {
+    content: '';
+    position: absolute;
+    left: 15px;
+    top: 6px;
+    bottom: 6px;
+    width: 2px;
+    background: var(--hd-border);
+}
+
+.hd-timeline-item {
+    position: relative;
+    margin-bottom: 1rem;
+}
+
+.hd-timeline-item:last-child {
+    margin-bottom: 0;
+}
+
+.hd-timeline-marker {
+    position: absolute;
+    left: -2.75rem;
+    top: 0;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: #fff;
+    border: 2px solid var(--hd-border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: .85rem;
+    z-index: 1;
+}
+
+.hd-timeline-marker.marker-publico {
+    border-color: #22c55e;
+    color: #15803d;
+}
+
+.hd-timeline-marker.marker-interno {
+    border-color: #a855f7;
+    color: #6d28d9;
+}
+
+.hd-timeline-content {
+    background: #f8fafc;
+    border: 1px solid var(--hd-border);
+    border-radius: .6rem;
+    padding: .75rem 1rem;
+}
+
+/* Anexos */
+.hd-anexo-thumb {
+    width: 88px;
+    height: 88px;
+    object-fit: cover;
+    border-radius: .5rem;
+    border: 1px solid var(--hd-border);
+}
+
+.hd-anexo-file {
+    width: 88px;
+    height: 88px;
+    border-radius: .5rem;
+    border: 1px solid var(--hd-border);
+    background: #f8fafc;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: var(--hd-text-muted);
+    font-size: 1.5rem;
+    text-decoration: none;
+    text-align: center;
+    padding: .25rem;
+}
