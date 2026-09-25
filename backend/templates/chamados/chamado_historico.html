@@ -22,7 +22,7 @@
                 <th>Status</th>
                 <th>Prioridade</th>
                 <th>Solicitante</th>
-                <th>Atendente</th>
+                <th>Técnico</th>
                 <th class="pe-3">Encerrado/atualizado em</th>
             </tr>
         </thead>
@@ -30,23 +30,28 @@
             {% for chamado in chamados %}
             <tr class="clickable-row" data-href="{% url 'chamados:detail' chamado.pk %}">
                 <td class="ps-3">#{{ chamado.pk }}</td>
-                <td>{{ chamado.titulo }}</td>
-                <td>{{ chamado.subcategoria.nome|default:chamado.categoria|default:'-' }}</td>
-                <td><span class="badge {{ chamado.status|status_badge }}">{{ chamado.get_status_display }}</span></td>
-                <td><span class="badge {{ chamado.prioridade|prioridade_badge }}">{{ chamado.get_prioridade_display }}</span></td>
+                <td><span class="hd-truncate" title="{{ chamado.titulo }}">{{ chamado.titulo }}</span></td>
+                <td><span class="hd-truncate" title="{{ chamado.subcategoria.nome|default:chamado.categoria }}">{{ chamado.subcategoria.nome|default:chamado.categoria|default:'-' }}</span></td>
+                <td><span class="badge rounded-pill {{ chamado.status|status_badge }}">{{ chamado.get_status_display }}</span></td>
+                <td><span class="badge rounded-pill {{ chamado.prioridade|prioridade_badge }}">{{ chamado.get_prioridade_display }}</span></td>
                 <td>
-                    {{ chamado.solicitante.get_full_name|default:chamado.solicitante.username }}
-                    {% include 'chamados/_usuario_info_icon.html' with usuario=chamado.solicitante %}
+                    <div class="d-flex align-items-center gap-2">
+                        {% include 'chamados/_usuario_info_icon.html' with usuario=chamado.solicitante %}
+                        {{ chamado.solicitante.get_full_name|default:chamado.solicitante.username }}
+                        {% if chamado.solicitante.vip %}<span class="badge rounded-pill badge-vip" title="Solicitante VIP"><i class="bi bi-star-fill"></i> VIP</span>{% endif %}
+                    </div>
                 </td>
                 <td>
                     {% if chamado.atendente %}
-                    {{ chamado.atendente.get_full_name|default:chamado.atendente.username }}
-                    {% include 'chamados/_usuario_info_icon.html' with usuario=chamado.atendente %}
+                    <div class="d-flex align-items-center gap-2">
+                        {% include 'chamados/_usuario_info_icon.html' with usuario=chamado.atendente %}
+                        {{ chamado.atendente.get_full_name|default:chamado.atendente.username }}
+                    </div>
                     {% else %}
-                    -
+                    <span class="fst-italic text-muted-hd small">Não atribuído</span>
                     {% endif %}
                 </td>
-                <td class="pe-3">{{ chamado.atualizado_em|date:'d/m/Y H:i' }}</td>
+                <td class="pe-3">{{ chamado.atualizado_em|date:'d M, H:i' }}</td>
             </tr>
             {% empty %}
             <tr><td colspan="8" class="text-center text-muted-hd py-5">Nenhum chamado encontrado no histórico.</td></tr>

@@ -1,15 +1,32 @@
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db import models
+from django.db.models import ProtectedError
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse_lazy
 from django.utils import timezone
 from django.views.generic import CreateView, DetailView, ListView, UpdateView, View
 
-from core.mixins import AtendenteRequiredMixin
+from core.mixins import AdministradorRequiredMixin, AtendenteRequiredMixin
 
-from .forms import ChamadoCreateForm, ChamadoGerenciarForm, ProcedimentoEntryForm
-from .models import Anexo, Chamado
+from .forms import (
+    CategoriaForm,
+    ChamadoCreateForm,
+    ProcedimentoEntryForm,
+    SLAPrioridadeForm,
+    SubcategoriaForm,
+)
+from .models import Anexo, Categoria, Chamado, SLAPrioridade, Subcategoria
+
+# Ordem de urgência (mais urgente primeiro) e descrição curta de cada prioridade,
+# usadas na tela do catálogo de serviços.
+PRIORIDADE_ORDEM = {'critica': 0, 'alta': 1, 'media': 2, 'baixa': 3}
+PRIORIDADE_DESCRICOES = {
+    'critica': 'Sistema fora do ar ou impacto crítico no atendimento',
+    'alta': 'Funcionalidade essencial comprometida',
+    'media': 'Impacto moderado no trabalho do solicitante',
+    'baixa': 'Sem impacto imediato na operação',
+}
 
 
 class ChamadoListView(LoginRequiredMixin, ListView):
@@ -24,9 +41,48 @@ class ChamadoListView(LoginRequiredMixin, ListView):
             'solicitante', 'solicitante__setor', 'atendente', 'atendente__setor', 'categoria', 'subcategoria'
         )
         if usuario.is_solicitante():
-            return qs.filter(solicitante=usuario)
-        # fila de trabalho do técnico: só chamados ainda em aberto
-        return qs.exclude(status__in=[Chamado.Status.RESOLVIDO, Chamado.Status.FECHADO])
+            qs = qs.filter(solicitante=usuario)
+        else:
+            # fila de trabalho do técnico: só chamados ainda em aberto
+            qs = qs.exclude(status__in=[Chamado.Status.RESOLVIDO, Chamado.Status.FECHADO])
+
+        termo = self.request.GET.get('q', '').strip()
+        if termo:
+            termo_id = termo.lstrip('#')
+            filtro = models.Q(titulo__icontains=termo)
+            if termo_id.isdigit():
+                filtro |= models.Q(pk=int(termo_id))
+            qs = qs.filter(filtro)
+
+        status = self.request.GET.get('status', '').strip()
+        if status:
+            qs = qs.filter(status=status)
+
+        categoria_id = self.request.GET.get('categoria', '').strip()
+        if categoria_id:
+            qs = qs.filter(categoria_id=categoria_id)
+
+        if not usuario.is_solicitante():
+            atendente_id = self.request.GET.get('atendente', '').strip()
+            if atendente_id:
+                qs = qs.filter(atendente_id=atendente_id)
+
+        return qs
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        usuario = self.request.user
+        context['q'] = self.request.GET.get('q', '')
+        context['status_selecionado'] = self.request.GET.get('status', '')
+        context['categoria_selecionada'] = self.request.GET.get('categoria', '')
+        context['status_choices'] = Chamado.Status.choices
+        context['categorias'] = Categoria.objects.order_by('ordem', 'nome')
+        if not usuario.is_solicitante():
+            context['atendente_selecionado'] = self.request.GET.get('atendente', '')
+            context['tecnicos'] = usuario.__class__.objects.filter(
+                perfil__in=[usuario.Perfil.ATENDENTE, usuario.Perfil.ADMINISTRADOR]
+            ).order_by('first_name', 'username')
+        return context
 
 
 class ChamadoHistoricoView(AtendenteRequiredMixin, ListView):
@@ -74,6 +130,10 @@ class ChamadoDetailView(LoginRequiredMixin, DetailView):
         if context['pode_gerenciar']:
             context['procedimento_form'] = ProcedimentoEntryForm(initial={'tipo': 'publico'})
             context['procedimentos'] = self.object.procedimentos.select_related('autor')
+            Usuario = self.request.user.__class__
+            context['tecnicos'] = Usuario.objects.filter(
+                perfil__in=[Usuario.Perfil.ATENDENTE, Usuario.Perfil.ADMINISTRADOR]
+            ).order_by('first_name', 'username')
         else:
             context['procedimentos'] = self.object.procedimentos.filter(tipo='publico').select_related('autor')
         return context
@@ -91,6 +151,7 @@ class ChamadoCreateView(LoginRequiredMixin, CreateView):
 
     def form_valid(self, form):
         form.instance.solicitante = self.request.user
+        form.instance.titulo = form.instance.subcategoria.nome
         response = super().form_valid(form)
         for arquivo in form.cleaned_data.get('anexos') or []:
             Anexo.objects.create(chamado=self.object, arquivo=arquivo, enviado_por=self.request.user)
@@ -137,14 +198,110 @@ class ChamadoConcluirView(AtendenteRequiredMixin, View):
         return redirect('chamados:detail', pk=pk)
 
 
-class ChamadoGerenciarView(AtendenteRequiredMixin, UpdateView):
-    model = Chamado
-    form_class = ChamadoGerenciarForm
-    template_name = 'chamados/chamado_gerenciar.html'
+class ChamadoReatribuirView(AtendenteRequiredMixin, View):
+    def post(self, request, pk):
+        chamado = get_object_or_404(Chamado, pk=pk)
+        Usuario = request.user.__class__
+        tecnico_id = request.POST.get('atendente')
+        tecnico = Usuario.objects.filter(
+            pk=tecnico_id, perfil__in=[Usuario.Perfil.ATENDENTE, Usuario.Perfil.ADMINISTRADOR]
+        ).first()
+        if not tecnico:
+            messages.error(request, 'Selecione um técnico válido para reatribuir o chamado.')
+            return redirect('chamados:detail', pk=pk)
+        chamado.atendente = tecnico
+        if chamado.status == Chamado.Status.ABERTO:
+            chamado.status = Chamado.Status.EM_ANDAMENTO
+        chamado.save()
+        messages.success(request, f'Chamado reatribuído para {tecnico}.')
+        return redirect('chamados:detail', pk=pk)
+
+
+class CatalogoServicosView(AtendenteRequiredMixin, ListView):
+    model = Categoria
+    template_name = 'chamados/catalogo_list.html'
+    context_object_name = 'categorias'
+
+    def get_queryset(self):
+        return Categoria.objects.prefetch_related('subcategorias').order_by('ordem', 'nome')
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        slas = sorted(SLAPrioridade.objects.all(), key=lambda sla: PRIORIDADE_ORDEM.get(sla.prioridade, 99))
+        for sla in slas:
+            sla.descricao = PRIORIDADE_DESCRICOES.get(sla.prioridade, '')
+        context['slas'] = slas
+        return context
+
+
+class SLAEditarView(AdministradorRequiredMixin, UpdateView):
+    model = SLAPrioridade
+    form_class = SLAPrioridadeForm
+    template_name = 'chamados/sla_form.html'
+    success_url = reverse_lazy('chamados:catalogo')
 
     def form_valid(self, form):
-        messages.success(self.request, 'Chamado atualizado.')
-        return super().form_valid(form)
+        response = super().form_valid(form)
+        messages.success(self.request, f'SLA de {self.object.get_prioridade_display()} atualizado para {self.object.horas}h.')
+        return response
 
-    def get_success_url(self):
-        return reverse_lazy('chamados:detail', kwargs={'pk': self.object.pk})
+
+class CategoriaCadastroView(AdministradorRequiredMixin, CreateView):
+    model = Categoria
+    form_class = CategoriaForm
+    template_name = 'chamados/categoria_form.html'
+    success_url = reverse_lazy('chamados:catalogo')
+
+    def form_valid(self, form):
+        response = super().form_valid(form)
+        messages.success(self.request, f'Categoria "{self.object}" cadastrada.')
+        return response
+
+
+class SubcategoriaCadastroView(AdministradorRequiredMixin, CreateView):
+    model = Subcategoria
+    form_class = SubcategoriaForm
+    template_name = 'chamados/subcategoria_form.html'
+    success_url = reverse_lazy('chamados:catalogo')
+
+    def get_initial(self):
+        initial = super().get_initial()
+        categoria_id = self.request.GET.get('categoria')
+        if categoria_id:
+            initial['categoria'] = categoria_id
+        return initial
+
+    def form_valid(self, form):
+        response = super().form_valid(form)
+        messages.success(self.request, f'Subcategoria "{self.object.nome}" cadastrada.')
+        return response
+
+
+class CategoriaExcluirView(AdministradorRequiredMixin, View):
+    def post(self, request, pk):
+        categoria = get_object_or_404(Categoria, pk=pk)
+        nome = str(categoria)
+        try:
+            categoria.delete()
+            messages.success(request, f'Categoria "{nome}" excluída.')
+        except ProtectedError:
+            messages.error(
+                request,
+                f'Não é possível excluir "{nome}": existem subcategorias ou chamados vinculados a ela.',
+            )
+        return redirect('chamados:catalogo')
+
+
+class SubcategoriaExcluirView(AdministradorRequiredMixin, View):
+    def post(self, request, pk):
+        subcategoria = get_object_or_404(Subcategoria, pk=pk)
+        nome = subcategoria.nome
+        try:
+            subcategoria.delete()
+            messages.success(request, f'Subcategoria "{nome}" excluída.')
+        except ProtectedError:
+            messages.error(
+                request,
+                f'Não é possível excluir "{nome}": existem chamados vinculados a ela.',
+            )
+        return redirect('chamados:catalogo')

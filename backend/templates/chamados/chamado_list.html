@@ -10,47 +10,99 @@
     <a href="{% url 'chamados:create' %}" class="btn btn-primary"><i class="bi bi-plus-circle"></i> Abrir chamado</a>
 </div>
 
-<div class="hd-card p-0 table-responsive">
+<form method="get" class="hd-card mb-3 d-flex flex-wrap gap-2 align-items-center">
+    <div class="hd-search flex-grow-1" style="min-width: 200px; max-width: 320px;">
+        <button type="submit" class="hd-search-btn" aria-label="Buscar"><i class="bi bi-search"></i></button>
+        <input type="text" name="q" value="{{ q }}" class="form-control" placeholder="Buscar por título ou #ID...">
+    </div>
+    <select name="status" class="form-select flex-grow-1" style="min-width: 160px; max-width: 190px;" onchange="this.form.submit()">
+        <option value="">Todos os status</option>
+        {% for valor, label in status_choices %}
+        <option value="{{ valor }}" {% if valor == status_selecionado %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+    </select>
+    <select name="categoria" class="form-select flex-grow-1" style="min-width: 160px; max-width: 210px;" onchange="this.form.submit()">
+        <option value="">Todas as categorias</option>
+        {% for categoria in categorias %}
+        <option value="{{ categoria.pk }}" {% if categoria_selecionada == categoria.pk|stringformat:'s' %}selected{% endif %}>{{ categoria.nome }}</option>
+        {% endfor %}
+    </select>
+    {% if tecnicos %}
+    <select name="atendente" class="form-select flex-grow-1" style="min-width: 160px; max-width: 210px;" onchange="this.form.submit()">
+        <option value="">Todos os técnicos</option>
+        {% for tecnico in tecnicos %}
+        <option value="{{ tecnico.pk }}" {% if atendente_selecionado == tecnico.pk|stringformat:'s' %}selected{% endif %}>{{ tecnico.get_full_name|default:tecnico.username }}</option>
+        {% endfor %}
+    </select>
+    {% endif %}
+    {% if q or status_selecionado or categoria_selecionada or atendente_selecionado %}
+    <a href="{% url 'chamados:list' %}" class="btn btn-outline-secondary btn-sm">Limpar</a>
+    {% endif %}
+</form>
+
+<div class="hd-card p-0 table-responsive-lg">
     <table class="table hd-table table-hover align-middle mb-0">
         <thead>
             <tr>
-                <th class="ps-3">#</th>
-                <th>Título</th>
-                <th>Categoria</th>
-                <th>Status</th>
-                <th>Prioridade</th>
-                <th>Solicitante</th>
-                <th>Atendente</th>
-                <th class="pe-3">Criado em</th>
+                <th class="ps-3 text-center">#</th>
+                <th class="text-center">Título</th>
+                <th class="text-center">Categoria</th>
+                <th class="text-center">Status</th>
+                <th class="text-center">Prioridade</th>
+                <th class="text-center">Solicitante</th>
+                <th class="text-center">Técnico</th>
+                <th class="text-center">Criado em</th>
+                <th class="pe-3 text-center">Prazo SLA</th>
             </tr>
         </thead>
         <tbody>
             {% for chamado in chamados %}
-            <tr class="clickable-row" data-href="{% url 'chamados:detail' chamado.pk %}">
-                <td class="ps-3">#{{ chamado.pk }}</td>
-                <td>{{ chamado.titulo }}</td>
-                <td>{{ chamado.subcategoria.nome|default:chamado.categoria|default:'-' }}</td>
-                <td><span class="badge {{ chamado.status|status_badge }}">{{ chamado.get_status_display }}</span></td>
-                <td>
-                    <span class="badge {{ chamado.prioridade|prioridade_badge }}">{{ chamado.get_prioridade_display }}</span>
-                    {% if chamado.sla_estourado %}<i class="bi bi-exclamation-triangle-fill text-danger" title="SLA estourado"></i>{% endif %}
+            <tr class="clickable-row{% if chamado.sla_estourado %} hd-row-sla-estourado{% endif %}" data-href="{% url 'chamados:detail' chamado.pk %}">
+                <td class="ps-3 text-center">#{{ chamado.pk }}</td>
+                <td class="text-center"><span class="hd-truncate" title="{{ chamado.titulo }}">{{ chamado.titulo }}</span></td>
+                <td class="text-center"><span class="hd-truncate" title="{{ chamado.subcategoria.nome|default:chamado.categoria }}">{{ chamado.subcategoria.nome|default:chamado.categoria|default:'-' }}</span></td>
+                <td class="text-center"><span class="badge rounded-pill {{ chamado.status|status_badge }}">{{ chamado.get_status_display }}</span></td>
+                <td class="text-center"><span class="badge rounded-pill {{ chamado.prioridade|prioridade_badge }}">{{ chamado.get_prioridade_display }}</span></td>
+                <td class="text-center">
+                    <div class="d-flex align-items-center justify-content-center gap-2">
+                        {% include 'chamados/_usuario_info_icon.html' with usuario=chamado.solicitante %}
+                        {{ chamado.solicitante.get_full_name|default:chamado.solicitante.username }}
+                        {% if chamado.solicitante.vip %}<span class="badge rounded-pill badge-vip" title="Solicitante VIP"><i class="bi bi-star-fill"></i> VIP</span>{% endif %}
+                    </div>
                 </td>
-                <td>
-                    {{ chamado.solicitante.get_full_name|default:chamado.solicitante.username }}
-                    {% include 'chamados/_usuario_info_icon.html' with usuario=chamado.solicitante %}
-                </td>
-                <td>
+                <td class="text-center">
                     {% if chamado.atendente %}
-                    {{ chamado.atendente.get_full_name|default:chamado.atendente.username }}
-                    {% include 'chamados/_usuario_info_icon.html' with usuario=chamado.atendente %}
+                    <div class="d-flex align-items-center justify-content-center gap-2">
+                        {% include 'chamados/_usuario_info_icon.html' with usuario=chamado.atendente %}
+                        {{ chamado.atendente.get_full_name|default:chamado.atendente.username }}
+                    </div>
+                    {% elif user.perfil == 'solicitante' %}
+                    <span class="fst-italic text-muted-hd small">Não atribuído</span>
                     {% else %}
-                    -
+                    <form method="post" action="{% url 'chamados:pegar' chamado.pk %}" class="m-0">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-outline-success btn-sm"><i class="bi bi-hand-index-thumb"></i> Atribuir a mim</button>
+                    </form>
                     {% endif %}
                 </td>
-                <td class="pe-3">{{ chamado.criado_em|date:'d/m/Y H:i' }}</td>
+                <td class="text-nowrap text-center" style="min-width: 130px;">
+                    {% if chamado.sla_estourado %}<i class="bi bi-clock-fill text-danger me-1" title="SLA estourado"></i>{% endif %}{{ chamado.criado_em|date:'d M, H:i' }}
+                </td>
+                <td class="pe-3 text-center" style="min-width: 110px;">
+                    {% if chamado.sla_concluido %}
+                    <span class="small text-muted-hd">Concluído</span>
+                    {% else %}
+                    <div class="small mb-1">
+                        <span class="sla-tempo sla-{{ chamado.sla_cor }} fw-semibold">{{ chamado.sla_percentual }}%</span>
+                    </div>
+                    <div class="sla-bar-track">
+                        <div class="sla-bar-fill sla-{{ chamado.sla_cor }}" style="width: {{ chamado.sla_percentual }}%"></div>
+                    </div>
+                    {% endif %}
+                </td>
             </tr>
             {% empty %}
-            <tr><td colspan="8" class="text-center text-muted-hd py-5">Nenhum chamado encontrado.</td></tr>
+            <tr><td colspan="9" class="text-center text-muted-hd py-5">Nenhum chamado encontrado.</td></tr>
             {% endfor %}
         </tbody>
     </table>

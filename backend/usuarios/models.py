@@ -17,7 +17,7 @@ class Setor(models.Model):
 class Usuario(AbstractUser):
     class Perfil(models.TextChoices):
         ADMINISTRADOR = 'administrador', 'Administrador'
-        ATENDENTE = 'atendente', 'Atendente'
+        ATENDENTE = 'atendente', 'Técnico'
         SOLICITANTE = 'solicitante', 'Solicitante'
 
     perfil = models.CharField(
@@ -39,6 +39,11 @@ class Usuario(AbstractUser):
     deve_trocar_senha = models.BooleanField(
         default=False,
         verbose_name='Deve trocar a senha no próximo login',
+    )
+    vip = models.BooleanField(
+        default=False,
+        verbose_name='Solicitante VIP',
+        help_text='Chamados abertos por um solicitante VIP têm o prazo de SLA reduzido em 25%.',
     )
 
     def is_administrador(self):

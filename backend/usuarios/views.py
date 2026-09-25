@@ -5,11 +5,11 @@ from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy
 from django.utils.crypto import get_random_string
-from django.views.generic import CreateView, ListView, View
+from django.views.generic import CreateView, ListView, UpdateView, View
 
 from core.mixins import AdministradorRequiredMixin, AtendenteRequiredMixin
 
-from .forms import LoginForm, SetorForm, TrocarSenhaForm, UsuarioCadastroForm
+from .forms import LoginForm, SetorForm, TrocarSenhaForm, UsuarioCadastroForm, UsuarioEditarForm
 from .models import Setor, Usuario
 
 SENHA_TEMPORARIA_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789'
@@ -71,6 +71,25 @@ class UsuarioCadastroView(AtendenteRequiredMixin, CreateView):
         })
 
 
+class UsuarioEditarView(AtendenteRequiredMixin, UpdateView):
+    model = Usuario
+    form_class = UsuarioEditarForm
+    template_name = 'usuarios/usuario_editar.html'
+    success_url = reverse_lazy('usuarios:list')
+
+    def dispatch(self, request, *args, **kwargs):
+        usuario = get_object_or_404(Usuario, pk=kwargs['pk'])
+        if usuario.perfil == Usuario.Perfil.ADMINISTRADOR and usuario != request.user:
+            messages.error(request, 'Somente o próprio administrador pode editar a sua conta.')
+            return redirect('usuarios:list')
+        return super().dispatch(request, *args, **kwargs)
+
+    def form_valid(self, form):
+        response = super().form_valid(form)
+        messages.success(self.request, f'Cadastro de {self.object} atualizado.')
+        return response
+
+
 class UsuarioListView(AtendenteRequiredMixin, ListView):
     model = Usuario
     template_name = 'usuarios/usuario_list.html'
@@ -87,11 +106,22 @@ class UsuarioListView(AtendenteRequiredMixin, ListView):
                 | Q(last_name__icontains=termo)
                 | Q(matricula__icontains=termo)
             )
+        perfil = self.request.GET.get('perfil', '').strip()
+        if perfil:
+            qs = qs.filter(perfil=perfil)
+        status = self.request.GET.get('status', '').strip()
+        if status == 'ativo':
+            qs = qs.filter(is_active=True)
+        elif status == 'inativo':
+            qs = qs.filter(is_active=False)
         return qs
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['q'] = self.request.GET.get('q', '')
+        context['perfil_selecionado'] = self.request.GET.get('perfil', '')
+        context['status_selecionado'] = self.request.GET.get('status', '')
+        context['perfil_choices'] = Usuario.Perfil.choices
         return context
 
 
@@ -100,6 +130,9 @@ class UsuarioToggleAtivoView(AtendenteRequiredMixin, View):
         usuario = get_object_or_404(Usuario, pk=pk)
         if usuario == request.user:
             messages.error(request, 'Você não pode desativar a própria conta.')
+            return redirect('usuarios:list')
+        if usuario.perfil == Usuario.Perfil.ADMINISTRADOR:
+            messages.error(request, 'Não é possível desativar uma conta de administrador.')
             return redirect('usuarios:list')
         usuario.is_active = not usuario.is_active
         usuario.save(update_fields=['is_active'])
@@ -113,6 +146,9 @@ class UsuarioToggleAtivoView(AtendenteRequiredMixin, View):
 class UsuarioResetarSenhaView(AtendenteRequiredMixin, View):
     def post(self, request, pk):
         usuario = get_object_or_404(Usuario, pk=pk)
+        if usuario.perfil == Usuario.Perfil.ADMINISTRADOR and usuario != request.user:
+            messages.error(request, 'Somente o próprio administrador pode resetar a sua senha.')
+            return redirect('usuarios:list')
         senha_temporaria = gerar_senha_temporaria()
         usuario.set_password(senha_temporaria)
         usuario.deve_trocar_senha = True

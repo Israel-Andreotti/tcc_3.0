@@ -6,9 +6,9 @@
     <div>
         <a href="{% url 'chamados:list' %}" class="text-decoration-none small text-muted-hd"><i class="bi bi-arrow-left"></i> Voltar</a>
         <h1 class="h3 mb-2 mt-1"><span class="hd-ticket-id">#{{ chamado.pk }}</span> {{ chamado.titulo }}</h1>
-        <span class="badge {{ chamado.status|status_badge }}">{{ chamado.get_status_display }}</span>
-        <span class="badge {{ chamado.prioridade|prioridade_badge }}">{{ chamado.get_prioridade_display }}</span>
-        {% if chamado.sla_estourado %}<span class="badge status-fechado bg-danger text-white"><i class="bi bi-exclamation-triangle-fill"></i> SLA estourado</span>{% endif %}
+        <span class="badge rounded-pill {{ chamado.status|status_badge }}">{{ chamado.get_status_display }}</span>
+        <span class="badge rounded-pill {{ chamado.prioridade|prioridade_badge }}">{{ chamado.get_prioridade_display }}</span>
+        {% if chamado.sla_estourado %}<span class="badge rounded-pill bg-danger text-white"><i class="bi bi-exclamation-triangle-fill"></i> SLA estourado</span>{% endif %}
     </div>
     {% if pode_gerenciar %}
     <div class="d-flex gap-2">
@@ -18,7 +18,9 @@
             <button type="submit" class="btn btn-success btn-sm"><i class="bi bi-hand-index-thumb"></i> Pegar chamado</button>
         </form>
         {% endif %}
-        <a href="{% url 'chamados:gerenciar' chamado.pk %}" class="btn btn-primary btn-sm"><i class="bi bi-pencil-square"></i> Gerenciar</a>
+        <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#reatribuirModal">
+            <i class="bi bi-arrow-left-right"></i> Reatribuir
+        </button>
     </div>
     {% endif %}
 </div>
@@ -30,7 +32,10 @@
             <div class="d-flex align-items-center gap-3">
                 <div class="hd-avatar"><i class="bi bi-person-fill"></i></div>
                 <div>
-                    <div class="fw-semibold">{{ chamado.solicitante }}</div>
+                    <div class="fw-semibold">
+                        {{ chamado.solicitante }}
+                        {% if chamado.solicitante.vip %}<span class="badge rounded-pill badge-vip" title="Solicitante VIP — SLA reduzido"><i class="bi bi-star-fill"></i> VIP</span>{% endif %}
+                    </div>
                     <div class="small text-muted-hd mt-1"><i class="bi bi-diagram-3"></i> {{ chamado.setor|default:'Setor não informado' }}</div>
                     {% if chamado.solicitante.email %}<div class="small text-muted-hd mt-1"><i class="bi bi-envelope"></i> {{ chamado.solicitante.email }}</div>{% endif %}
                     {% if chamado.solicitante.telefone %}<div class="small text-muted-hd mt-1"><i class="bi bi-telephone"></i> {{ chamado.solicitante.telefone }}</div>{% endif %}
@@ -45,7 +50,7 @@
             <dl class="mb-0">
                 <dt class="text-muted-hd small">Categoria</dt>
                 <dd>{{ chamado.categoria|default:'-' }}{% if chamado.subcategoria %} &rsaquo; {{ chamado.subcategoria.nome }}{% endif %}</dd>
-                <dt class="text-muted-hd small">Atendente</dt>
+                <dt class="text-muted-hd small">Técnico</dt>
                 <dd>{{ chamado.atendente|default:'Não atribuído' }}</dd>
                 <dt class="text-muted-hd small">Aberto em</dt>
                 <dd>{{ chamado.criado_em|date:'d/m/Y H:i' }}</dd>
@@ -100,9 +105,9 @@
             <div class="hd-timeline-content">
                 <div class="d-flex justify-content-between align-items-center flex-wrap gap-1 mb-1">
                     {% if entrada.tipo == 'interno' %}
-                    <span class="badge status-aguardando">Nota interna</span>
+                    <span class="badge rounded-pill status-aguardando">Nota interna</span>
                     {% else %}
-                    <span class="badge status-resolvido">Procedimento</span>
+                    <span class="badge rounded-pill status-resolvido">Procedimento</span>
                     {% endif %}
                     <span class="small text-muted-hd">{{ entrada.autor }} &middot; {{ entrada.criado_em|date:'d/m/Y H:i' }}</span>
                 </div>
@@ -116,7 +121,7 @@
 
     {% if pode_gerenciar %}
     <div class="d-flex flex-column flex-md-row gap-3 align-items-md-end border-top pt-3">
-        <form method="post" action="{% url 'chamados:procedimento_add' chamado.pk %}" class="flex-grow-1">
+        <form method="post" action="{% url 'chamados:procedimento_add' chamado.pk %}" class="flex-grow-1" id="procedimentoForm">
             {% csrf_token %}
             <div class="btn-group mb-2" role="group">
                 <button type="button" class="btn btn-outline-primary btn-sm active" data-tipo-btn data-value="publico">
@@ -132,7 +137,7 @@
             <div class="d-flex gap-2 mt-2">
                 <button type="submit" class="btn btn-primary"><i class="bi bi-send"></i> Registrar</button>
                 {% if chamado.status != 'resolvido' and chamado.status != 'fechado' %}
-                <button type="submit" formaction="{% url 'chamados:concluir' chamado.pk %}" formnovalidate class="btn btn-success">
+                <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#confirmarResolverModal">
                     <i class="bi bi-check-circle-fill"></i> Resolver chamado
                 </button>
                 {% endif %}
@@ -141,4 +146,64 @@
     </div>
     {% endif %}
 </div>
+
+{% if pode_gerenciar %}
+<div class="modal fade" id="reatribuirModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <form method="post" action="{% url 'chamados:reatribuir' chamado.pk %}">
+                {% csrf_token %}
+                <div class="modal-header">
+                    <h2 class="modal-title h5"><i class="bi bi-arrow-left-right"></i> Reatribuir chamado</h2>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+                </div>
+                <div class="modal-body">
+                    <label class="form-label" for="reatribuirAtendente">Novo técnico responsável</label>
+                    <select name="atendente" id="reatribuirAtendente" class="form-select" required>
+                        <option value="">Selecione um técnico</option>
+                        {% for tecnico in tecnicos %}
+                        <option value="{{ tecnico.pk }}" {% if chamado.atendente_id == tecnico.pk %}selected{% endif %}>{{ tecnico.get_full_name|default:tecnico.username }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-check-circle"></i> Reatribuir</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="confirmarResolverModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title h5"><i class="bi bi-check-circle-fill text-success"></i> Resolver chamado</h2>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-0">Marcar o chamado <strong>#{{ chamado.pk }}</strong> como resolvido? Essa ação encerra o atendimento.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-success" id="confirmarResolverBtn"><i class="bi bi-check-circle-fill"></i> Sim, resolver</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var botaoConfirmar = document.getElementById('confirmarResolverBtn');
+    if (botaoConfirmar) {
+        botaoConfirmar.addEventListener('click', function () {
+            var form = document.getElementById('procedimentoForm');
+            form.action = '{% url "chamados:concluir" chamado.pk %}';
+            form.submit();
+        });
+    }
+});
+</script>
+{% endif %}
 {% endblock %}

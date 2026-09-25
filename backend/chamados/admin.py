@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Anexo, Categoria, Chamado, Comentario, ProcedimentoEntry, Subcategoria
+from .models import Anexo, Categoria, Chamado, Comentario, ProcedimentoEntry, SLAPrioridade, Subcategoria
 
 
 class SubcategoriaInline(admin.TabularInline):
@@ -32,6 +32,11 @@ class AnexoInline(admin.TabularInline):
     model = Anexo
     extra = 0
     readonly_fields = ('enviado_por', 'criado_em')
+
+
+@admin.register(SLAPrioridade)
+class SLAPrioridadeAdmin(admin.ModelAdmin):
+    list_display = ('prioridade', 'horas')
 
 
 @admin.register(Chamado)

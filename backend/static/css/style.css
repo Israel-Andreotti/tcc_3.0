@@ -42,6 +42,12 @@ body {
     opacity: 1;
 }
 
+.hd-navbar .nav-link.active {
+    opacity: 1;
+    font-weight: 700;
+    border-bottom: 2px solid var(--hd-primary);
+}
+
 .hd-navbar-userinfo {
     border-top: 1px solid rgba(255, 255, 255, .15);
 }
@@ -102,6 +108,87 @@ body {
     cursor: pointer;
 }
 
+.hd-table tbody tr.hd-row-sla-estourado {
+    background-color: #fef2f2;
+}
+
+/* Botão de mostrar/ocultar senha */
+.hd-password-wrapper {
+    position: relative;
+}
+
+.hd-password-wrapper input {
+    padding-right: 2.5rem;
+}
+
+.hd-password-toggle {
+    position: absolute;
+    right: 2px;
+    top: 0;
+    bottom: 0;
+    border: none;
+    background: transparent;
+    color: var(--hd-text-muted);
+    padding: 0 .65rem;
+    display: flex;
+    align-items: center;
+}
+
+.hd-password-toggle:hover {
+    color: var(--hd-primary);
+}
+
+/* Barra de busca com lupa embutida no campo */
+.hd-search {
+    position: relative;
+    flex: 1 1 auto;
+}
+
+.hd-search .hd-search-btn {
+    position: absolute;
+    left: 2px;
+    top: 0;
+    bottom: 0;
+    border: none;
+    background: transparent;
+    color: var(--hd-text-muted);
+    padding: 0 .6rem;
+    display: flex;
+    align-items: center;
+}
+
+.hd-search input.form-control {
+    padding-left: 2.25rem;
+}
+
+.hd-search .hd-search-icon {
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--hd-text-muted);
+    pointer-events: none;
+}
+
+/* Cabeçalho de categoria no catálogo de serviços */
+.hd-catalogo-categoria-header h3 {
+    font-weight: 700;
+    color: var(--hd-text);
+    background: #eef2ff;
+    padding: .4rem .75rem;
+    border-radius: .5rem;
+    letter-spacing: .01em;
+}
+
+.hd-truncate {
+    display: inline-block;
+    max-width: 150px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: bottom;
+}
+
 /* Badges de status */
 .badge.status-aberto { background-color: #dbeafe; color: #1d4ed8; }
 .badge.status-andamento { background-color: #fef3c7; color: #b45309; }
@@ -119,6 +206,16 @@ body {
     font-weight: 600;
     font-size: .72rem;
     padding: .4em .65em;
+}
+
+/* Badge de solicitante VIP */
+.badge.badge-vip {
+    background-color: #fef3c7;
+    color: #92400e;
+}
+
+.hd-avatar-sm.hd-avatar-vip {
+    box-shadow: 0 0 0 2px #f59e0b, 0 1px 2px rgba(0, 0, 0, .08);
 }
 
 /* Login */
@@ -157,6 +254,25 @@ body {
     align-items: center;
     justify-content: center;
     font-size: 1.3rem;
+}
+
+/* Avatar pequeno (iniciais) usado nas tabelas de chamados */
+.hd-avatar-sm {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    min-width: 30px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--hd-primary), #60a5fa);
+    color: #fff;
+    font-size: .7rem;
+    font-weight: 700;
+    letter-spacing: .02em;
+    cursor: pointer;
+    border: 2px solid #fff;
+    box-shadow: 0 0 0 1px var(--hd-border), 0 1px 2px rgba(0, 0, 0, .08);
 }
 
 /* Sidebar de detalhes do chamado */

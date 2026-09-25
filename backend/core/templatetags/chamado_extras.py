@@ -26,3 +26,13 @@ def status_badge(status):
 @register.filter
 def prioridade_badge(prioridade):
     return PRIORIDADE_CLASSES.get(prioridade, 'prioridade-media')
+
+
+@register.filter
+def iniciais(nome):
+    partes = (nome or '').split()
+    if not partes:
+        return '?'
+    if len(partes) == 1:
+        return partes[0][:2].upper()
+    return (partes[0][0] + partes[-1][0]).upper()

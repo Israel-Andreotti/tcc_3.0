@@ -1,0 +1,128 @@
+{% extends 'base.html' %}
+{% load chamado_extras %}
+{% block title %}Catálogo de serviços{% endblock %}
+{% block content %}
+<h1 class="h3 mb-3"><i class="bi bi-journal-text"></i> Catálogo de serviços</h1>
+
+<div class="row justify-content-center mb-4">
+    <div class="col-lg-8">
+        <div class="hd-card p-0 table-responsive">
+            <table class="table hd-table align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th class="ps-3">Prioridade</th>
+                        <th>O que engloba</th>
+                        <th>Prazo de SLA</th>
+                        {% if user.perfil == 'administrador' %}<th class="pe-3 text-end">Ações</th>{% endif %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for sla in slas %}
+                    <tr>
+                        <td class="ps-3"><span class="badge rounded-pill {{ sla.prioridade|prioridade_badge }}">{{ sla.get_prioridade_display }}</span></td>
+                        <td class="small text-muted-hd">{{ sla.descricao }}</td>
+                        <td class="fw-semibold">{{ sla.horas }}h</td>
+                        {% if user.perfil == 'administrador' %}
+                        <td class="pe-3 text-end">
+                            <a href="{% url 'chamados:sla_editar' sla.pk %}" class="btn btn-outline-primary btn-sm" title="Editar"><i class="bi bi-pencil"></i></a>
+                        </td>
+                        {% endif %}
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="4" class="text-center text-muted-hd py-4">Nenhum SLA configurado.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <h2 class="h5 m-0">Categorias e subcategorias</h2>
+    <div class="d-flex flex-wrap gap-2">
+        <div class="hd-search" style="max-width: 260px;">
+            <i class="bi bi-search hd-search-icon"></i>
+            <input type="text" id="catalogoSearch" class="form-control" placeholder="Buscar um serviço pelo nome...">
+        </div>
+        {% if user.perfil == 'administrador' %}
+        <a href="{% url 'chamados:categoria_cadastrar' %}" class="btn btn-outline-primary"><i class="bi bi-plus-circle"></i> Categoria</a>
+        <a href="{% url 'chamados:subcategoria_cadastrar' %}" class="btn btn-outline-primary"><i class="bi bi-plus-circle"></i> Subcategoria</a>
+        {% endif %}
+    </div>
+</div>
+
+<div id="catalogoCategorias">
+    {% for categoria in categorias %}
+    <div class="hd-card mb-3 hd-catalogo-categoria" data-nome-categoria="{{ categoria.nome|lower }}">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2 hd-catalogo-categoria-header">
+            <h3 class="h6 m-0">{{ categoria.nome }}</h3>
+            {% if user.perfil == 'administrador' %}
+            <div class="d-flex gap-1">
+                <a href="{% url 'chamados:subcategoria_cadastrar' %}?categoria={{ categoria.pk }}" class="btn btn-outline-primary btn-sm" title="Adicionar subcategoria"><i class="bi bi-plus-lg"></i></a>
+                <form method="post" action="{% url 'chamados:categoria_excluir' categoria.pk %}" class="m-0"
+                      onsubmit="return confirm('Excluir a categoria \'{{ categoria.nome }}\'? Só é possível se não houver subcategorias ou chamados vinculados.');">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-outline-danger btn-sm" title="Excluir categoria"><i class="bi bi-trash"></i></button>
+                </form>
+            </div>
+            {% endif %}
+        </div>
+        {% if categoria.subcategorias.all %}
+        <ul class="list-unstyled mb-0">
+            {% for sub in categoria.subcategorias.all %}
+            <li class="d-flex flex-wrap align-items-center gap-2 py-1 hd-catalogo-subcategoria{% if not forloop.last %} border-bottom{% endif %}" data-nome-sub="{{ sub.nome|lower }}">
+                <span class="flex-grow-1">{{ sub.nome }}</span>
+                <span class="badge rounded-pill {{ sub.prioridade|prioridade_badge }}">{{ sub.get_prioridade_display }}</span>
+                {% if user.perfil == 'administrador' %}
+                <form method="post" action="{% url 'chamados:subcategoria_excluir' sub.pk %}" class="m-0"
+                      onsubmit="return confirm('Excluir \'{{ sub.nome }}\'? Só é possível se não houver chamados vinculados.');">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-outline-danger btn-sm" title="Excluir"><i class="bi bi-trash"></i></button>
+                </form>
+                {% endif %}
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <p class="text-muted-hd small mb-0">Nenhuma subcategoria cadastrada.</p>
+        {% endif %}
+    </div>
+    {% empty %}
+    <p class="text-muted-hd">Nenhuma categoria cadastrada.</p>
+    {% endfor %}
+    <p id="catalogoSemResultado" class="text-muted-hd text-center py-4 d-none">Nenhum serviço encontrado.</p>
+</div>
+
+<script>
+(function () {
+    var campo = document.getElementById('catalogoSearch');
+    if (!campo) return;
+    var blocosCategoria = document.querySelectorAll('.hd-catalogo-categoria');
+    var semResultado = document.getElementById('catalogoSemResultado');
+
+    campo.addEventListener('input', function () {
+        var termo = campo.value.trim().toLowerCase();
+        var algumVisivel = false;
+
+        blocosCategoria.forEach(function (bloco) {
+            var nomeCategoria = bloco.dataset.nomeCategoria || '';
+            var categoriaCombina = !termo || nomeCategoria.indexOf(termo) !== -1;
+            var algumaSubVisivel = false;
+
+            bloco.querySelectorAll('.hd-catalogo-subcategoria').forEach(function (item) {
+                var nomeSub = item.dataset.nomeSub || '';
+                var visivel = !termo || categoriaCombina || nomeSub.indexOf(termo) !== -1;
+                item.classList.toggle('d-none', !visivel);
+                if (visivel) algumaSubVisivel = true;
+            });
+
+            var mostrarBloco = categoriaCombina || algumaSubVisivel;
+            bloco.classList.toggle('d-none', !mostrarBloco);
+            if (mostrarBloco) algumVisivel = true;
+        });
+
+        semResultado.classList.toggle('d-none', algumVisivel);
+    });
+})();
+</script>
+{% endblock %}

@@ -42,6 +42,21 @@ class Subcategoria(models.Model):
         return f'{self.categoria} > {self.nome}'
 
 
+class SLAPrioridade(models.Model):
+    """Prazo de SLA (em horas) configurável por prioridade. Editável apenas por administradores."""
+
+    prioridade = models.CharField(max_length=10, choices=Prioridade.choices, unique=True)
+    horas = models.PositiveIntegerField(help_text='Prazo, em horas, para resolver um chamado dessa prioridade.')
+
+    class Meta:
+        ordering = ['prioridade']
+        verbose_name = 'SLA por prioridade'
+        verbose_name_plural = 'SLAs por prioridade'
+
+    def __str__(self):
+        return f'{self.get_prioridade_display()} — {self.horas}h'
+
+
 class Chamado(models.Model):
     class Status(models.TextChoices):
         ABERTO = 'aberto', 'Aberto'
@@ -59,6 +74,9 @@ class Chamado(models.Model):
         Prioridade.MEDIA: 24,
         Prioridade.BAIXA: 72,
     }
+
+    # Solicitantes marcados como VIP têm o prazo de SLA reduzido nesse percentual.
+    VIP_SLA_MULTIPLICADOR = 0.75
 
     titulo = models.CharField(max_length=150)
     descricao = models.TextField()
@@ -124,9 +142,16 @@ class Chamado(models.Model):
         if self.subcategoria_id:
             self.prioridade = self.subcategoria.prioridade
         if not self.prazo_sla:
-            horas = self.SLA_HORAS.get(self.prioridade, 24)
-            self.prazo_sla = timezone.now() + timedelta(hours=horas)
+            self.prazo_sla = timezone.now() + timedelta(hours=self.sla_horas_configurado())
         super().save(*args, **kwargs)
+
+    def sla_horas_configurado(self):
+        horas = SLAPrioridade.objects.filter(prioridade=self.prioridade).values_list('horas', flat=True).first()
+        if horas is None:
+            horas = self.SLA_HORAS.get(self.prioridade, 24)
+        if self.solicitante_id and getattr(self.solicitante, 'vip', False):
+            horas *= self.VIP_SLA_MULTIPLICADOR
+        return horas
 
     @property
     def sla_estourado(self):

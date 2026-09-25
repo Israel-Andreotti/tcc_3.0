@@ -77,7 +77,7 @@ python manage.py runserver
 ```
 
 Acesse:
-- **http://127.0.0.1:8000/usuarios/login/** — login (redireciona conforme o perfil: atendente/administrador vão para a fila de chamados, solicitante vai direto para abrir um chamado)
+- **http://127.0.0.1:8000/usuarios/login/** — login (redireciona conforme o perfil: técnico/administrador vão para a fila de chamados, solicitante vai direto para abrir um chamado)
 - **http://127.0.0.1:8000/admin/** — painel administrativo (gerenciar usuários, categorias, chamados)
 
 ## Estrutura do projeto
@@ -97,8 +97,8 @@ backend/
 | Perfil | Acesso |
 |---|---|
 | `solicitante` | Abre chamados e acompanha apenas os próprios |
-| `atendente` | Vê e gerencia (muda status/prioridade/atribuição) todos os chamados |
-| `administrador` | Mesmo acesso do atendente + admin do Django |
+| `atendente` (exibido como "Técnico") | Vê e gerencia (muda status/prioridade/atribuição) todos os chamados |
+| `administrador` | Mesmo acesso do técnico + admin do Django |
 
 ## Testando sem escrever código
 

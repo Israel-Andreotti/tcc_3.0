@@ -1,6 +1,6 @@
 from django import forms
 
-from .models import Chamado, ProcedimentoEntry, Subcategoria
+from .models import Categoria, Chamado, ProcedimentoEntry, SLAPrioridade, Subcategoria
 
 
 class MultipleFileInput(forms.ClearableFileInput):
@@ -35,12 +35,11 @@ class SubcategoriaSelect(forms.Select):
 class ChamadoCreateForm(forms.ModelForm):
     class Meta:
         model = Chamado
-        fields = ['categoria', 'subcategoria', 'setor', 'titulo', 'descricao']
+        fields = ['categoria', 'subcategoria', 'setor', 'descricao']
         widgets = {
             'categoria': forms.Select(attrs={'class': 'form-select', 'id': 'id_categoria'}),
             'subcategoria': SubcategoriaSelect(attrs={'class': 'form-select', 'id': 'id_subcategoria'}),
             'setor': forms.Select(attrs={'class': 'form-select'}),
-            'titulo': forms.TextInput(attrs={'class': 'form-control'}),
             'descricao': forms.Textarea(attrs={'class': 'form-control', 'rows': 4}),
         }
 
@@ -72,22 +71,41 @@ class ChamadoCreateForm(forms.ModelForm):
         return cleaned_data
 
 
-class ChamadoGerenciarForm(forms.ModelForm):
+class CategoriaForm(forms.ModelForm):
     class Meta:
-        model = Chamado
-        fields = ['status', 'atendente']
+        model = Categoria
+        fields = ['nome', 'ordem']
+        labels = {'nome': 'Nome da categoria', 'ordem': 'Ordem de exibição'}
         widgets = {
-            'status': forms.Select(attrs={'class': 'form-select'}),
-            'atendente': forms.Select(attrs={'class': 'form-select'}),
+            'nome': forms.TextInput(attrs={'class': 'form-control', 'autofocus': True}),
+            'ordem': forms.NumberInput(attrs={'class': 'form-control', 'min': 0}),
+        }
+
+
+class SubcategoriaForm(forms.ModelForm):
+    class Meta:
+        model = Subcategoria
+        fields = ['categoria', 'nome', 'prioridade']
+        labels = {'categoria': 'Categoria', 'nome': 'Nome da subcategoria', 'prioridade': 'Prioridade padrão'}
+        widgets = {
+            'categoria': forms.Select(attrs={'class': 'form-select'}),
+            'nome': forms.TextInput(attrs={'class': 'form-control', 'autofocus': True}),
+            'prioridade': forms.Select(attrs={'class': 'form-select'}),
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        Usuario = self.fields['atendente'].queryset.model
-        self.fields['atendente'].queryset = Usuario.objects.filter(
-            perfil__in=[Usuario.Perfil.ATENDENTE, Usuario.Perfil.ADMINISTRADOR]
-        )
-        self.fields['atendente'].required = False
+        self.fields['categoria'].empty_label = 'Selecione uma categoria'
+
+
+class SLAPrioridadeForm(forms.ModelForm):
+    class Meta:
+        model = SLAPrioridade
+        fields = ['horas']
+        labels = {'horas': 'Prazo (em horas)'}
+        widgets = {
+            'horas': forms.NumberInput(attrs={'class': 'form-control', 'min': 1}),
+        }
 
 
 class ProcedimentoEntryForm(forms.ModelForm):

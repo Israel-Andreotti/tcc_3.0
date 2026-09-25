@@ -6,10 +6,25 @@
     <a href="{% url 'usuarios:cadastrar' %}" class="btn btn-primary"><i class="bi bi-person-plus"></i> Cadastrar usuário</a>
 </div>
 
-<form method="get" class="mb-3 d-flex gap-2">
-    <input type="text" name="q" value="{{ q }}" class="form-control" placeholder="Buscar por nome, usuário ou matrícula...">
-    <button type="submit" class="btn btn-outline-primary"><i class="bi bi-search"></i> Buscar</button>
-    {% if q %}<a href="{% url 'usuarios:list' %}" class="btn btn-outline-secondary">Limpar</a>{% endif %}
+<form method="get" class="hd-card mb-3 d-flex flex-wrap gap-2 align-items-center">
+    <div class="hd-search" style="max-width: 320px;">
+        <button type="submit" class="hd-search-btn" aria-label="Buscar"><i class="bi bi-search"></i></button>
+        <input type="text" name="q" value="{{ q }}" class="form-control" placeholder="Buscar por nome, usuário ou matrícula...">
+    </div>
+    <select name="perfil" class="form-select" style="max-width: 180px;" onchange="this.form.submit()">
+        <option value="">Todos os perfis</option>
+        {% for valor, label in perfil_choices %}
+        <option value="{{ valor }}" {% if valor == perfil_selecionado %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+    </select>
+    <select name="status" class="form-select" style="max-width: 160px;" onchange="this.form.submit()">
+        <option value="">Todos os status</option>
+        <option value="ativo" {% if status_selecionado == 'ativo' %}selected{% endif %}>Ativo</option>
+        <option value="inativo" {% if status_selecionado == 'inativo' %}selected{% endif %}>Inativo</option>
+    </select>
+    {% if q or perfil_selecionado or status_selecionado %}
+    <a href="{% url 'usuarios:list' %}" class="btn btn-outline-secondary btn-sm">Limpar</a>
+    {% endif %}
 </form>
 
 <div class="hd-card p-0 table-responsive">
@@ -29,36 +44,48 @@
             {% for usuario in usuarios %}
             <tr>
                 <td class="ps-3">{{ usuario.matricula }}</td>
-                <td>{{ usuario.get_full_name|default:'-' }}</td>
+                <td>
+                    {% if usuario.get_full_name %}{{ usuario.get_full_name }}{% else %}<span class="fst-italic text-muted-hd">Não definido</span>{% endif %}
+                    {% if usuario.vip %}<span class="badge rounded-pill badge-vip" title="Solicitante VIP"><i class="bi bi-star-fill"></i> VIP</span>{% endif %}
+                </td>
                 <td>{{ usuario.username }}</td>
                 <td>{{ usuario.get_perfil_display }}</td>
-                <td>{{ usuario.setor|default:'-' }}</td>
+                <td>
+                    {% if usuario.setor %}{{ usuario.setor }}{% else %}<span class="fst-italic text-muted-hd">Não definido</span>{% endif %}
+                </td>
                 <td>
                     {% if usuario.is_active %}
-                    <span class="badge status-resolvido">Ativo</span>
+                    <span class="badge rounded-pill status-resolvido">Ativo</span>
                     {% else %}
-                    <span class="badge status-fechado">Inativo</span>
+                    <span class="badge rounded-pill status-fechado">Inativo</span>
                     {% endif %}
                 </td>
                 <td class="pe-3">
-                    <div class="d-flex gap-2 justify-content-end">
+                    {% if usuario.perfil == 'administrador' and usuario != request.user %}
+                    <div class="d-flex justify-content-end align-items-center gap-1 text-muted-hd small fst-italic">
+                        <i class="bi bi-lock-fill"></i> Acesso restrito
+                    </div>
+                    {% else %}
+                    <div class="d-flex gap-1 justify-content-end">
+                        <a href="{% url 'usuarios:editar' usuario.pk %}" class="btn btn-outline-primary btn-sm" title="Editar"><i class="bi bi-pencil"></i></a>
                         <form method="post" action="{% url 'usuarios:resetar_senha' usuario.pk %}" class="m-0"
                               onsubmit="return confirm('Gerar uma nova senha temporária para {{ usuario }}?');">
                             {% csrf_token %}
-                            <button type="submit" class="btn btn-outline-secondary btn-sm"><i class="bi bi-key"></i> Resetar senha</button>
+                            <button type="submit" class="btn btn-outline-secondary btn-sm" title="Resetar senha"><i class="bi bi-key"></i></button>
                         </form>
-                        {% if usuario != request.user %}
+                        {% if usuario != request.user and usuario.perfil != 'administrador' %}
                         <form method="post" action="{% url 'usuarios:toggle_ativo' usuario.pk %}" class="m-0"
                               onsubmit="return confirm('{% if usuario.is_active %}Desativar{% else %}Reativar{% endif %} {{ usuario }}?');">
                             {% csrf_token %}
                             {% if usuario.is_active %}
-                            <button type="submit" class="btn btn-outline-danger btn-sm"><i class="bi bi-slash-circle"></i> Desativar</button>
+                            <button type="submit" class="btn btn-outline-danger btn-sm" title="Desativar"><i class="bi bi-slash-circle"></i></button>
                             {% else %}
-                            <button type="submit" class="btn btn-outline-success btn-sm"><i class="bi bi-check-circle"></i> Reativar</button>
+                            <button type="submit" class="btn btn-outline-success btn-sm" title="Reativar"><i class="bi bi-check-circle"></i></button>
                             {% endif %}
                         </form>
                         {% endif %}
                     </div>
+                    {% endif %}
                 </td>
             </tr>
             {% empty %}
@@ -72,11 +99,11 @@
 <nav class="mt-3">
     <ul class="pagination">
         {% if page_obj.has_previous %}
-        <li class="page-item"><a class="page-link" href="?q={{ q }}&page={{ page_obj.previous_page_number }}">Anterior</a></li>
+        <li class="page-item"><a class="page-link" href="?q={{ q }}&perfil={{ perfil_selecionado }}&status={{ status_selecionado }}&page={{ page_obj.previous_page_number }}">Anterior</a></li>
         {% endif %}
         <li class="page-item disabled"><span class="page-link">{{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span></li>
         {% if page_obj.has_next %}
-        <li class="page-item"><a class="page-link" href="?q={{ q }}&page={{ page_obj.next_page_number }}">Próxima</a></li>
+        <li class="page-item"><a class="page-link" href="?q={{ q }}&perfil={{ perfil_selecionado }}&status={{ status_selecionado }}&page={{ page_obj.next_page_number }}">Próxima</a></li>
         {% endif %}
     </ul>
 </nav>
