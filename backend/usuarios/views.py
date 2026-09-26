@@ -79,8 +79,8 @@ class UsuarioEditarView(AtendenteRequiredMixin, UpdateView):
 
     def dispatch(self, request, *args, **kwargs):
         usuario = get_object_or_404(Usuario, pk=kwargs['pk'])
-        if usuario.perfil == Usuario.Perfil.ADMINISTRADOR and usuario != request.user:
-            messages.error(request, 'Somente o próprio administrador pode editar a sua conta.')
+        if usuario.super_admin:
+            messages.error(request, 'Contas de superadministrador não podem ser editadas por aqui.')
             return redirect('usuarios:list')
         return super().dispatch(request, *args, **kwargs)
 
@@ -97,7 +97,7 @@ class UsuarioListView(AtendenteRequiredMixin, ListView):
     paginate_by = 25
 
     def get_queryset(self):
-        qs = Usuario.objects.select_related('setor').order_by('first_name', 'username')
+        qs = Usuario.objects.filter(super_admin=False).select_related('setor').order_by('first_name', 'username')
         termo = self.request.GET.get('q', '').strip()
         if termo:
             qs = qs.filter(
@@ -131,8 +131,8 @@ class UsuarioToggleAtivoView(AtendenteRequiredMixin, View):
         if usuario == request.user:
             messages.error(request, 'Você não pode desativar a própria conta.')
             return redirect('usuarios:list')
-        if usuario.perfil == Usuario.Perfil.ADMINISTRADOR:
-            messages.error(request, 'Não é possível desativar uma conta de administrador.')
+        if usuario.super_admin:
+            messages.error(request, 'Contas de superadministrador não podem ser desativadas.')
             return redirect('usuarios:list')
         usuario.is_active = not usuario.is_active
         usuario.save(update_fields=['is_active'])
@@ -146,8 +146,8 @@ class UsuarioToggleAtivoView(AtendenteRequiredMixin, View):
 class UsuarioResetarSenhaView(AtendenteRequiredMixin, View):
     def post(self, request, pk):
         usuario = get_object_or_404(Usuario, pk=pk)
-        if usuario.perfil == Usuario.Perfil.ADMINISTRADOR and usuario != request.user:
-            messages.error(request, 'Somente o próprio administrador pode resetar a sua senha.')
+        if usuario.super_admin:
+            messages.error(request, 'A senha de uma conta de superadministrador não pode ser resetada por aqui.')
             return redirect('usuarios:list')
         senha_temporaria = gerar_senha_temporaria()
         usuario.set_password(senha_temporaria)

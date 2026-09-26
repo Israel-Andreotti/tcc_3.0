@@ -45,6 +45,15 @@ class Usuario(AbstractUser):
         verbose_name='Solicitante VIP',
         help_text='Chamados abertos por um solicitante VIP têm o prazo de SLA reduzido em 25%.',
     )
+    super_admin = models.BooleanField(
+        default=False,
+        verbose_name='Superadministrador',
+        help_text=(
+            'Acima do administrador comum: tem todas as permissões de administrador, mas nenhum '
+            'usuário (nem outro admin) pode editá-lo, resetar sua senha ou desativá-lo. Não aparece '
+            'na listagem de usuários. Só pode ser concedido pelo Django admin.'
+        ),
+    )
 
     def is_administrador(self):
         return self.perfil == self.Perfil.ADMINISTRADOR
@@ -69,6 +78,9 @@ class Usuario(AbstractUser):
     def save(self, *args, **kwargs):
         if not self.matricula:
             self.matricula = self._gerar_matricula()
+        if self.super_admin:
+            # Superadmin sempre tem todas as permissões de administrador.
+            self.perfil = self.Perfil.ADMINISTRADOR
         super().save(*args, **kwargs)
 
     def __str__(self):

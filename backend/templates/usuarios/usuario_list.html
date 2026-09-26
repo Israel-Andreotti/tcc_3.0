@@ -61,11 +61,6 @@
                     {% endif %}
                 </td>
                 <td class="pe-3">
-                    {% if usuario.perfil == 'administrador' and usuario != request.user %}
-                    <div class="d-flex justify-content-end align-items-center gap-1 text-muted-hd small fst-italic">
-                        <i class="bi bi-lock-fill"></i> Acesso restrito
-                    </div>
-                    {% else %}
                     <div class="d-flex gap-1 justify-content-end">
                         <a href="{% url 'usuarios:editar' usuario.pk %}" class="btn btn-outline-primary btn-sm" title="Editar"><i class="bi bi-pencil"></i></a>
                         <form method="post" action="{% url 'usuarios:resetar_senha' usuario.pk %}" class="m-0"
@@ -73,7 +68,7 @@
                             {% csrf_token %}
                             <button type="submit" class="btn btn-outline-secondary btn-sm" title="Resetar senha"><i class="bi bi-key"></i></button>
                         </form>
-                        {% if usuario != request.user and usuario.perfil != 'administrador' %}
+                        {% if usuario != request.user %}
                         <form method="post" action="{% url 'usuarios:toggle_ativo' usuario.pk %}" class="m-0"
                               onsubmit="return confirm('{% if usuario.is_active %}Desativar{% else %}Reativar{% endif %} {{ usuario }}?');">
                             {% csrf_token %}
@@ -85,7 +80,6 @@
                         </form>
                         {% endif %}
                     </div>
-                    {% endif %}
                 </td>
             </tr>
             {% empty %}
