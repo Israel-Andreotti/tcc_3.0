@@ -7,7 +7,9 @@ from django.urls import reverse_lazy
 from django.utils import timezone
 from django.views.generic import CreateView, DetailView, ListView, UpdateView, View
 
+from ativos.models import Ativo, MovimentacaoAtivo
 from core.mixins import AdministradorRequiredMixin, AtendenteRequiredMixin
+from usuarios.models import Setor
 
 from .forms import (
     CategoriaForm,
@@ -134,6 +136,9 @@ class ChamadoDetailView(LoginRequiredMixin, DetailView):
             context['tecnicos'] = Usuario.objects.filter(
                 perfil__in=[Usuario.Perfil.ATENDENTE, Usuario.Perfil.ADMINISTRADOR]
             ).order_by('first_name', 'username')
+            context['movimentacoes_pendentes'] = self.object.movimentacoes_ativo.filter(
+                status=MovimentacaoAtivo.Status.PENDENTE
+            ).select_related('ativo', 'setor_destino', 'funcionario_destino')
         else:
             context['procedimentos'] = self.object.procedimentos.filter(tipo='publico').select_related('autor')
         return context
@@ -194,7 +199,24 @@ class ChamadoConcluirView(AtendenteRequiredMixin, View):
         chamado.status = Chamado.Status.RESOLVIDO
         chamado.fechado_em = timezone.now()
         chamado.save()
-        messages.success(request, 'Chamado concluído.')
+
+        pendentes = chamado.movimentacoes_ativo.filter(status=MovimentacaoAtivo.Status.PENDENTE)
+        efetivadas = 0
+        for movimentacao in pendentes:
+            ativo = movimentacao.ativo
+            ativo.setor = movimentacao.setor_destino
+            ativo.funcionario = movimentacao.funcionario_destino
+            ativo.status = Ativo.Status.EM_USO
+            ativo.save()
+            movimentacao.status = MovimentacaoAtivo.Status.EFETIVADA
+            movimentacao.efetivada_em = timezone.now()
+            movimentacao.save()
+            efetivadas += 1
+
+        if efetivadas:
+            messages.success(request, f'Chamado concluído. {efetivadas} movimentação(ões) de ativo efetivada(s).')
+        else:
+            messages.success(request, 'Chamado concluído.')
         return redirect('chamados:detail', pk=pk)
 
 
@@ -214,6 +236,59 @@ class ChamadoReatribuirView(AtendenteRequiredMixin, View):
             chamado.status = Chamado.Status.EM_ANDAMENTO
         chamado.save()
         messages.success(request, f'Chamado reatribuído para {tecnico}.')
+        return redirect('chamados:detail', pk=pk)
+
+
+class ChamadoMovimentarAtivoView(AtendenteRequiredMixin, View):
+    """Registra a movimentação como PENDENTE a partir só do número de patrimônio:
+    - ativo lotado na TI -> entrada no setor do chamado.
+    - ativo lotado no setor do chamado -> saída de volta pra TI.
+    Nada muda de fato até o chamado ser concluído (ver ChamadoConcluirView)."""
+
+    def post(self, request, pk):
+        chamado = get_object_or_404(Chamado, pk=pk)
+
+        patrimonio = request.POST.get('patrimonio', '').strip()
+        ativo = Ativo.objects.filter(patrimonio__iexact=patrimonio).first()
+        if not ativo:
+            messages.error(request, f'Nenhum ativo encontrado com o patrimônio "{patrimonio}".')
+            return redirect('chamados:detail', pk=pk)
+
+        if ativo.tem_movimentacao_pendente:
+            messages.error(request, f'O ativo "{ativo}" já tem uma movimentação pendente aguardando conclusão de chamado.')
+            return redirect('chamados:detail', pk=pk)
+
+        setor_ti = Setor.objects.filter(nome='TI').first()
+        if ativo.setor_id == chamado.setor_id:
+            destino_setor = setor_ti
+        elif setor_ti and ativo.setor_id == setor_ti.pk:
+            destino_setor = chamado.setor
+        else:
+            messages.error(
+                request,
+                f'O ativo "{ativo}" não está lotado na TI nem em {chamado.setor} — não é possível '
+                'movimentar por este chamado.',
+            )
+            return redirect('chamados:detail', pk=pk)
+
+        if not destino_setor:
+            messages.error(request, 'Setor "TI" não está cadastrado no sistema.')
+            return redirect('chamados:detail', pk=pk)
+
+        MovimentacaoAtivo.objects.create(
+            ativo=ativo,
+            chamado=chamado,
+            setor_origem=ativo.setor,
+            funcionario_origem=ativo.funcionario,
+            setor_destino=destino_setor,
+            realizado_por=request.user,
+            status=MovimentacaoAtivo.Status.PENDENTE,
+        )
+        messages.success(
+            request,
+            f'Movimentação de "{ativo}" para {destino_setor} registrada como pendente — '
+            'só será efetivada quando este chamado for concluído.',
+        )
         return redirect('chamados:detail', pk=pk)
 
 

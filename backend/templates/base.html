@@ -31,6 +31,7 @@
                     <a class="nav-link text-light{% if request.path == '/chamados/' %} active{% endif %}" href="{% url 'chamados:list' %}"><i class="bi bi-list-task"></i> Fila de chamados</a>
                     <a class="nav-link text-light{% if '/historico/' in request.path %} active{% endif %}" href="{% url 'chamados:historico' %}"><i class="bi bi-clock-history"></i> Histórico</a>
                     <a class="nav-link text-light{% if '/catalogo/' in request.path %} active{% endif %}" href="{% url 'chamados:catalogo' %}"><i class="bi bi-journal-text"></i> Catálogo de serviços</a>
+                    <a class="nav-link text-light{% if '/ativos/' in request.path %} active{% endif %}" href="{% url 'ativos:list' %}"><i class="bi bi-pc-display"></i> Ativos</a>
                     <a class="nav-link text-light{% if '/usuarios/' in request.path and '/setores' not in request.path %} active{% endif %}" href="{% url 'usuarios:list' %}"><i class="bi bi-people"></i> Usuários</a>
                     {% if user.perfil == 'administrador' %}
                     <a class="nav-link text-light{% if '/setores' in request.path %} active{% endif %}" href="{% url 'usuarios:setores' %}"><i class="bi bi-diagram-3"></i> Setores</a>
@@ -157,6 +158,61 @@
                 input.type = visivel ? 'password' : 'text';
                 botao.innerHTML = visivel ? '<i class="bi bi-eye"></i>' : '<i class="bi bi-eye-slash"></i>';
                 botao.setAttribute('aria-label', visivel ? 'Mostrar senha' : 'Ocultar senha');
+            });
+        });
+
+        // Autocomplete simples: campo de texto com sugestões, sem <select>. O valor
+        // escolhido vai pra um input hidden (ex.: funcionário por nome/matrícula).
+        document.querySelectorAll('[data-autocomplete-input]').forEach(function (input) {
+            var hidden = document.getElementById(input.dataset.autocompleteHidden);
+            var opcoesContainer = document.getElementById(input.dataset.autocompleteOpcoes);
+            var sugestoesEl = document.getElementById(input.dataset.autocompleteSugestoes);
+            if (!hidden || !opcoesContainer || !sugestoesEl) return;
+
+            var opcoes = Array.prototype.slice.call(opcoesContainer.querySelectorAll('[data-id]')).map(function (el) {
+                return { id: el.dataset.id, label: el.dataset.label };
+            });
+
+            function renderSugestoes(lista) {
+                sugestoesEl.innerHTML = '';
+                if (!lista.length) {
+                    sugestoesEl.classList.add('d-none');
+                    return;
+                }
+                lista.slice(0, 8).forEach(function (item) {
+                    var opt = document.createElement('button');
+                    opt.type = 'button';
+                    opt.className = 'list-group-item list-group-item-action';
+                    opt.textContent = item.label;
+                    opt.addEventListener('mousedown', function (event) { event.preventDefault(); });
+                    opt.addEventListener('click', function () {
+                        input.value = item.label;
+                        hidden.value = item.id;
+                        sugestoesEl.classList.add('d-none');
+                    });
+                    sugestoesEl.appendChild(opt);
+                });
+                sugestoesEl.classList.remove('d-none');
+            }
+
+            function filtrarEMostrar(termo) {
+                if (!termo) {
+                    sugestoesEl.classList.add('d-none');
+                    return;
+                }
+                renderSugestoes(opcoes.filter(function (o) { return o.label.toLowerCase().indexOf(termo) !== -1; }));
+            }
+
+            input.addEventListener('input', function () {
+                hidden.value = '';
+                filtrarEMostrar(input.value.trim().toLowerCase());
+            });
+            input.addEventListener('focus', function () {
+                // Só reabre a lista de sugestões; não mexe na seleção já feita.
+                filtrarEMostrar(input.value.trim().toLowerCase());
+            });
+            input.addEventListener('blur', function () {
+                sugestoesEl.classList.add('d-none');
             });
         });
 

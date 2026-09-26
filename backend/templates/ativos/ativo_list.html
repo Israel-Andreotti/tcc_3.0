@@ -1,0 +1,96 @@
+{% extends 'base.html' %}
+{% block title %}Ativos{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <h1 class="h3 m-0"><i class="bi bi-pc-display"></i> Ativos</h1>
+    <a href="{% url 'ativos:cadastrar' %}" class="btn btn-primary"><i class="bi bi-plus-circle"></i> Cadastrar ativo</a>
+</div>
+
+<form method="get" class="hd-card mb-3 d-flex flex-wrap gap-2 align-items-center">
+    <div class="hd-search flex-grow-1" style="min-width: 200px; max-width: 320px;">
+        <button type="submit" class="hd-search-btn" aria-label="Buscar"><i class="bi bi-search"></i></button>
+        <input type="text" name="q" value="{{ q }}" class="form-control" placeholder="Buscar por marca, modelo ou patrimônio...">
+    </div>
+    <select name="tipo" class="form-select flex-grow-1" style="min-width: 160px; max-width: 190px;" onchange="this.form.submit()">
+        <option value="">Todos os tipos</option>
+        {% for valor, label in tipo_choices %}
+        <option value="{{ valor }}" {% if valor == tipo_selecionado %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+    </select>
+    <select name="status" class="form-select flex-grow-1" style="min-width: 160px; max-width: 190px;" onchange="this.form.submit()">
+        <option value="">Todas as situações</option>
+        {% for valor, label in status_choices %}
+        <option value="{{ valor }}" {% if valor == status_selecionado %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+    </select>
+    {% if q or status_selecionado or tipo_selecionado %}
+    <a href="{% url 'ativos:list' %}" class="btn btn-outline-secondary btn-sm">Limpar</a>
+    {% endif %}
+</form>
+
+<div class="hd-card p-0 table-responsive">
+    <table class="table hd-table align-middle mb-0">
+        <thead>
+            <tr>
+                <th class="ps-3">Marca</th>
+                <th>Modelo</th>
+                <th>Tipo</th>
+                <th>Patrimônio</th>
+                <th>Status</th>
+                <th>Lotação</th>
+                <th class="pe-3 text-end">Ações</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for ativo in ativos %}
+            <tr>
+                <td class="ps-3">{{ ativo.marca }}</td>
+                <td>{{ ativo.modelo }}</td>
+                <td>{{ ativo.get_tipo_display }}</td>
+                <td>{{ ativo.patrimonio }}</td>
+                <td>
+                    {% if ativo.status == 'disponivel' %}
+                    <span class="badge rounded-pill status-resolvido">{{ ativo.get_status_display }}</span>
+                    {% elif ativo.status == 'em_uso' %}
+                    <span class="badge rounded-pill status-aberto">{{ ativo.get_status_display }}</span>
+                    {% elif ativo.status == 'triagem' %}
+                    <span class="badge rounded-pill status-andamento">{{ ativo.get_status_display }}</span>
+                    {% else %}
+                    <span class="badge rounded-pill status-fechado bg-danger text-white">{{ ativo.get_status_display }}</span>
+                    {% endif %}
+                </td>
+                <td>{{ ativo.lotacao_display }}</td>
+                <td class="pe-3">
+                    <div class="d-flex gap-1 justify-content-end">
+                        <a href="{% url 'ativos:editar' ativo.pk %}" class="btn btn-outline-primary btn-sm" title="Editar"><i class="bi bi-pencil"></i></a>
+                        {% if user.perfil == 'administrador' %}
+                        <form method="post" action="{% url 'ativos:excluir' ativo.pk %}" class="m-0"
+                              onsubmit="return confirm('Excluir o ativo \'{{ ativo }}\'?');">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-outline-danger btn-sm" title="Excluir"><i class="bi bi-trash"></i></button>
+                        </form>
+                        {% endif %}
+                    </div>
+                </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="7" class="text-center text-muted-hd py-5">Nenhum ativo encontrado.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% if is_paginated %}
+<nav class="mt-3">
+    <ul class="pagination">
+        {% if page_obj.has_previous %}
+        <li class="page-item"><a class="page-link" href="?q={{ q }}&status={{ status_selecionado }}&tipo={{ tipo_selecionado }}&page={{ page_obj.previous_page_number }}">Anterior</a></li>
+        {% endif %}
+        <li class="page-item disabled"><span class="page-link">{{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span></li>
+        {% if page_obj.has_next %}
+        <li class="page-item"><a class="page-link" href="?q={{ q }}&status={{ status_selecionado }}&tipo={{ tipo_selecionado }}&page={{ page_obj.next_page_number }}">Próxima</a></li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+{% endblock %}

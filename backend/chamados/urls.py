@@ -19,4 +19,5 @@ urlpatterns = [
     path('<int:pk>/procedimento/', views.ProcedimentoEntryCreateView.as_view(), name='procedimento_add'),
     path('<int:pk>/concluir/', views.ChamadoConcluirView.as_view(), name='concluir'),
     path('<int:pk>/reatribuir/', views.ChamadoReatribuirView.as_view(), name='reatribuir'),
+    path('<int:pk>/movimentar-ativo/', views.ChamadoMovimentarAtivoView.as_view(), name='movimentar_ativo'),
 ]

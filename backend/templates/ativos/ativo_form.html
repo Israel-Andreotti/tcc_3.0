@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+{% block title %}{% if object %}Editar ativo{% else %}Cadastrar ativo{% endif %}{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-5">
+        <h1 class="h3 mb-3">
+            {% if object %}<i class="bi bi-pencil-square"></i> Editar ativo{% else %}<i class="bi bi-plus-circle"></i> Cadastrar ativo{% endif %}
+        </h1>
+        <div class="hd-card">
+            <form method="post">
+                {% csrf_token %}
+                {% for field in form %}
+                <div class="mb-3">
+                    <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    {% if field.name == 'funcionario' %}
+                    <div class="position-relative">
+                        <input type="text" class="form-control" autocomplete="off"
+                               placeholder="Buscar por nome ou matrícula..."
+                               data-autocomplete-input
+                               data-autocomplete-hidden="{{ field.id_for_label }}"
+                               data-autocomplete-opcoes="funcionarioOpcoes"
+                               data-autocomplete-sugestoes="funcionarioSugestoes"
+                               value="{% if object.funcionario %}{{ object.funcionario.get_full_name|default:object.funcionario.username }} — {{ object.funcionario.matricula }}{% endif %}">
+                        <div id="funcionarioSugestoes" class="list-group position-absolute w-100 d-none" style="z-index: 1000; max-height: 220px; overflow-y: auto;"></div>
+                        <div id="funcionarioOpcoes" class="d-none">
+                            {% for obj in field.field.queryset %}
+                            <span data-id="{{ obj.pk }}" data-label="{{ obj.get_full_name|default:obj.username }} — {{ obj.matricula }}"></span>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+                    {{ field }}
+                    {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+                    {% if field.errors %}<div class="text-danger small">{{ field.errors }}</div>{% endif %}
+                </div>
+                {% endfor %}
+                <div class="d-flex gap-2">
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-check-circle"></i> {% if object %}Salvar{% else %}Cadastrar{% endif %}</button>
+                    <a href="{% url 'ativos:list' %}" class="btn btn-outline-secondary">Cancelar</a>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

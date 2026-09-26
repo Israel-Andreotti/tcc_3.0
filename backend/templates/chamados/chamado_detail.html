@@ -136,16 +136,52 @@
             {{ procedimento_form.texto }}
             <div class="d-flex gap-2 mt-2">
                 <button type="submit" class="btn btn-primary"><i class="bi bi-send"></i> Registrar</button>
-                {% if chamado.status != 'resolvido' and chamado.status != 'fechado' %}
-                <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#confirmarResolverModal">
-                    <i class="bi bi-check-circle-fill"></i> Resolver chamado
-                </button>
-                {% endif %}
             </div>
         </form>
     </div>
     {% endif %}
 </div>
+
+{% if pode_gerenciar and chamado.setor %}
+<div class="hd-card mb-4">
+    <h2 class="h6 text-uppercase text-muted-hd mb-3"><i class="bi bi-arrow-left-right"></i> Movimentação de ativo</h2>
+
+    {% if movimentacoes_pendentes %}
+    <ul class="list-unstyled mb-3">
+        {% for mov in movimentacoes_pendentes %}
+        <li class="d-flex flex-wrap align-items-center gap-2{% if not forloop.last %} border-bottom pb-2 mb-2{% endif %}">
+            <i class="bi bi-pc-display"></i>
+            <span class="fw-semibold">{{ mov.ativo }}</span>
+            <i class="bi bi-arrow-right text-muted-hd"></i>
+            <span>{{ mov.destino_display }}</span>
+            <span class="badge rounded-pill status-andamento ms-auto">Pendente</span>
+        </li>
+        {% endfor %}
+    </ul>
+    <div class="form-text mb-3">Efetivada automaticamente quando o chamado for concluído.</div>
+    {% endif %}
+
+    <form method="post" action="{% url 'chamados:movimentar_ativo' chamado.pk %}" class="d-flex flex-wrap gap-2 align-items-end">
+        {% csrf_token %}
+        <div class="flex-grow-1" style="min-width: 200px;">
+            <label class="form-label" for="movimentarPatrimonio">Nº de patrimônio</label>
+            <input type="text" name="patrimonio" id="movimentarPatrimonio" class="form-control" placeholder="Digite o patrimônio do ativo..." required>
+        </div>
+        <button type="submit" class="btn btn-primary"><i class="bi bi-box-arrow-in-right"></i> Registrar movimentação</button>
+    </form>
+    <div class="form-text mt-2">
+        Ativo lotado na <strong>TI</strong> &rarr; entrada em <strong>{{ chamado.setor }}</strong>. Ativo lotado em <strong>{{ chamado.setor }}</strong> &rarr; saída de volta pra TI.
+    </div>
+</div>
+{% endif %}
+
+{% if pode_gerenciar and chamado.status != 'resolvido' and chamado.status != 'fechado' %}
+<div class="mb-4 text-center">
+    <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#confirmarResolverModal">
+        <i class="bi bi-check-circle-fill"></i> Resolver chamado
+    </button>
+</div>
+{% endif %}
 
 {% if pode_gerenciar %}
 <div class="modal fade" id="reatribuirModal" tabindex="-1" aria-hidden="true">
@@ -184,6 +220,9 @@
             </div>
             <div class="modal-body">
                 <p class="mb-0">Marcar o chamado <strong>#{{ chamado.pk }}</strong> como resolvido? Essa ação encerra o atendimento.</p>
+                {% if movimentacoes_pendentes %}
+                <p class="mb-0 mt-2 small text-muted-hd"><i class="bi bi-hourglass-split"></i> {{ movimentacoes_pendentes|length }} movimentação(ões) de ativo pendente(s) será(ão) efetivada(s) junto.</p>
+                {% endif %}
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
