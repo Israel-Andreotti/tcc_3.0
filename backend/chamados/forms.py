@@ -1,6 +1,24 @@
 from django import forms
 
-from .models import Categoria, Chamado, ProcedimentoEntry, SLAPrioridade, Subcategoria
+from midia.services import TAMANHO_MAXIMO_ENVIO
+
+from .models import Anexo, Categoria, Chamado, ProcedimentoEntry, SLAPrioridade, Subcategoria
+
+LIMITE_ANEXO_MB = TAMANHO_MAXIMO_ENVIO // (1024 * 1024)
+
+
+def validar_anexos(arquivos):
+    """Checagem prévia de quantidade e tamanho, antes de criar qualquer registro. A validação do
+    conteúdo e a otimização acontecem depois, em midia.services.salvar_upload."""
+    arquivos = [a for a in (arquivos or []) if a]
+    if len(arquivos) > Anexo.QUANTIDADE_MAXIMA:
+        raise forms.ValidationError(f'Envie no máximo {Anexo.QUANTIDADE_MAXIMA} arquivos por vez.')
+    for arquivo in arquivos:
+        if not arquivo.size:
+            raise forms.ValidationError(f'O arquivo "{arquivo.name}" está vazio.')
+        if arquivo.size > TAMANHO_MAXIMO_ENVIO:
+            raise forms.ValidationError(f'O arquivo "{arquivo.name}" passa do limite de {LIMITE_ANEXO_MB} MB.')
+    return arquivos
 
 
 class MultipleFileInput(forms.ClearableFileInput):
@@ -46,8 +64,17 @@ class ChamadoCreateForm(forms.ModelForm):
     anexos = MultipleFileField(
         required=False,
         label='Anexos',
-        help_text='Capturas de tela ou outros arquivos que ajudem a entender o problema.',
+        help_text=(
+            f'Capturas de tela ou outros arquivos que ajudem a entender o problema '
+            f'(até {Anexo.QUANTIDADE_MAXIMA} arquivos, {LIMITE_ANEXO_MB} MB cada; imagens são otimizadas).'
+        ),
     )
+
+    def clean_anexos(self):
+        anexos = self.cleaned_data.get('anexos')
+        if anexos and not isinstance(anexos, (list, tuple)):
+            anexos = [anexos]
+        return validar_anexos(anexos)
 
     def __init__(self, *args, usuario=None, **kwargs):
         super().__init__(*args, **kwargs)

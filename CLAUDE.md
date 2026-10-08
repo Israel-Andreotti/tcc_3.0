@@ -10,16 +10,16 @@ All Django commands run from `backend/` with the root `venv/` activated.
 cd backend
 python manage.py runserver          # or double-click run.bat at repo root
 python manage.py makemigrations && python manage.py migrate
-python manage.py test               # tests.py files are empty stubs — there is no real test suite yet
+python manage.py test               # only the midia app has real tests; other tests.py are empty stubs
 python manage.py test chamados      # single app
 python manage.py check
 ```
 
 Config comes from `backend/.env` via `python-decouple` (template: `backend/.env.example`). PostgreSQL only (no SQLite): `config/settings.py` uses `DATABASE_URL` when set (prod/Render), otherwise the `DB_*` variables (local Postgres, database `tcc_chamados`).
 
-## Deploy (Render)
+## Deploy (Koyeb + Neon)
 
-`render.yaml` (Blueprint, `autoDeploy: false`, root `backend/`) runs `build.sh`: install deps → `collectstatic` → `migrate` → upsert the `DJANGO_SUPERUSER_USERNAME` user as superuser/administrador and **reset its password from `DJANGO_SUPERUSER_PASSWORD` on every deploy**. Served by gunicorn + WhiteNoise (`CompressedManifestStaticFilesStorage` — a template referencing a missing static file will 500 in prod). Media (`Anexo` uploads) is only served when `DEBUG=True` and Render's disk is ephemeral.
+Web app on Koyeb (buildpack, work directory `backend/`, Python from `.python-version`), database on Neon via `DATABASE_URL`. `backend/Procfile` runs `start.sh` on every boot: `collectstatic` → `migrate` → upsert the `DJANGO_SUPERUSER_USERNAME` user as superuser/administrador and **reset its password from `DJANGO_SUPERUSER_PASSWORD`** → gunicorn on `$PORT`. `.gitattributes` keeps `*.sh`/`Procfile` with LF endings (repo is developed on Windows). With `DEBUG=False`, settings trust `X-Forwarded-Proto` and use secure cookies; `ALLOWED_HOSTS`/`CSRF_TRUSTED_ORIGINS` come from env. Static files via WhiteNoise (`CompressedManifestStaticFilesStorage` — a template referencing a missing static file will 500 in prod). Uploads live in app `midia` (see below).
 
 ## Architecture
 
@@ -35,6 +35,10 @@ backend/
 ```
 
 Views are class-based (generic CBVs, plus plain `View` with `post()` for actions); every action ends with `messages.*` + `redirect`. URLs are namespaced (`core:`, `usuarios:`, `chamados:`, `ativos:`).
+
+### Uploads (app `midia`)
+
+Binary files never go in the database. `midia.Arquivo` stores metadata only (UUID pk, `nome_original`, `storage_key`, `tamanho`, `formato`, dimensions); the file is in the default storage: S3-compatible object storage (django-storages; Cloudflare R2/S3/Supabase) when `STORAGE_BUCKET` is set — served straight from the bucket's public URL (`STORAGE_PUBLIC_DOMAIN`), so files stay reachable even with the app down — otherwise local `backend/uploads/` (served by Django only in DEBUG). All uploads go through `midia.services.salvar_upload`: type detected from content (Pillow / `%PDF-`), images (JPEG/PNG/WebP only) are EXIF-rotated, shrunk to ≤1920px and re-encoded as WebP; non-image anexos are stored as `application/octet-stream` with an allow-listed extension (else `.bin`); keys are `imagens|arquivos/YYYY/MM/<uuid>.<ext>`. Deleting an `Arquivo` deletes the object on commit (signal). API: `POST /midia/imagens/` (multipart field `imagem`, session auth + CSRF) and `GET /midia/imagens/<uuid>/` (JSON with `url`). Chamado `Anexo` = `chamado` + OneToOne `arquivo`; create via `Anexo.criar_varios` inside a transaction (all-or-nothing, cleans storage on failure). Tests: `python manage.py test midia`.
 
 ### Roles / RBAC
 

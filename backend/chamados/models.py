@@ -252,14 +252,18 @@ class Comentario(models.Model):
 
 
 def anexo_upload_path(instance, filename):
+    # Não é mais usada (anexos ficam no banco), mas a migration 0008 ainda a referencia.
     return f'chamados/{instance.chamado_id}/{filename}'
 
 
 class Anexo(models.Model):
-    EXTENSOES_IMAGEM = ('.png', '.jpg', '.jpeg', '.gif', '.webp')
+    """Arquivo anexado a um chamado. O arquivo em si é um `midia.Arquivo`: metadados no banco e
+    binário no object storage, acessado direto pela URL pública (`anexo.arquivo.url`)."""
+
+    QUANTIDADE_MAXIMA = 5  # por envio
 
     chamado = models.ForeignKey(Chamado, on_delete=models.CASCADE, related_name='anexos')
-    arquivo = models.FileField(upload_to=anexo_upload_path)
+    arquivo = models.OneToOneField('midia.Arquivo', on_delete=models.PROTECT, related_name='anexo')
     enviado_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
     criado_em = models.DateTimeField(auto_now_add=True)
 
@@ -269,15 +273,31 @@ class Anexo(models.Model):
         verbose_name_plural = 'Anexos'
 
     def __str__(self):
-        return self.arquivo.name
+        return self.arquivo.nome_original
 
-    @property
-    def nome(self):
-        return self.arquivo.name.rsplit('/', 1)[-1]
+    @classmethod
+    def criar(cls, chamado, arquivo_enviado, enviado_por):
+        """Valida/otimiza e grava o arquivo no storage (midia) e o vincula ao chamado."""
+        from midia.services import salvar_upload
 
-    @property
-    def is_imagem(self):
-        return self.nome.lower().endswith(self.EXTENSOES_IMAGEM)
+        arquivo = salvar_upload(arquivo_enviado, enviado_por, somente_imagens=False)
+        return cls.objects.create(chamado=chamado, arquivo=arquivo, enviado_por=enviado_por)
+
+    @classmethod
+    def criar_varios(cls, chamado, arquivos_enviados, enviado_por):
+        """Tudo ou nada: se um arquivo for recusado, apaga do storage os que já tinham sido gravados
+        e relança o erro (quem chama deve estar numa transação, para desfazer os registros)."""
+        from django.core.files.storage import default_storage
+
+        criados = []
+        try:
+            for arquivo_enviado in arquivos_enviados:
+                criados.append(cls.criar(chamado, arquivo_enviado, enviado_por))
+        except Exception:
+            for anexo in criados:
+                default_storage.delete(anexo.arquivo.storage_key)
+            raise
+        return criados
 
 
 class ProcedimentoEntry(models.Model):

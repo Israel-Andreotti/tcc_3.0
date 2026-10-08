@@ -31,7 +31,12 @@ class ProcedimentoEntryInline(admin.TabularInline):
 class AnexoInline(admin.TabularInline):
     model = Anexo
     extra = 0
-    readonly_fields = ('enviado_por', 'criado_em')
+    fields = ('arquivo', 'enviado_por', 'criado_em')
+    readonly_fields = fields
+
+    def has_add_permission(self, request, obj=None):
+        # Upload só pela tela do chamado, que passa pela validação/otimização do app midia.
+        return False
 
 
 @admin.register(SLAPrioridade)

@@ -109,11 +109,11 @@
     <h2 class="h6 text-uppercase text-muted-hd mb-2">Anexos</h2>
     <div class="d-flex flex-wrap gap-2">
         {% for anexo in chamado.anexos.all %}
-        <a href="{{ anexo.arquivo.url }}" target="_blank" rel="noopener" title="{{ anexo.nome }}">
-            {% if anexo.is_imagem %}
-            <img src="{{ anexo.arquivo.url }}" alt="{{ anexo.nome }}" class="hd-anexo-thumb">
+        <a href="{{ anexo.arquivo.url }}" target="_blank" rel="noopener" title="{{ anexo.arquivo.nome_original }} ({{ anexo.arquivo.tamanho|filesizeformat }})">
+            {% if anexo.arquivo.is_imagem %}
+            <img src="{{ anexo.arquivo.url }}" alt="{{ anexo.arquivo.nome_original }}" class="hd-anexo-thumb" loading="lazy">
             {% else %}
-            <span class="hd-anexo-file"><i class="bi bi-file-earmark-text"></i><span class="small text-truncate w-100">{{ anexo.nome }}</span></span>
+            <span class="hd-anexo-file"><i class="bi bi-file-earmark-text"></i><span class="small text-truncate w-100">{{ anexo.arquivo.nome_original }}</span></span>
             {% endif %}
         </a>
         {% endfor %}
@@ -134,7 +134,8 @@
         <textarea name="texto" id="respostaTexto" class="form-control mb-2" rows="3" required
                   placeholder="Escreva a informação solicitada..."></textarea>
         <label class="form-label small" for="respostaAnexos">Anexos (opcional)</label>
-        <input type="file" name="anexos" id="respostaAnexos" class="form-control mb-3" multiple>
+        <input type="file" name="anexos" id="respostaAnexos" class="form-control" multiple>
+        <div class="form-text mb-3">Até 5 arquivos, 10 MB cada.</div>
         <button type="submit" class="btn btn-primary"><i class="bi bi-send"></i> Enviar resposta</button>
         <div class="form-text mt-2">Ao responder, o chamado volta para atendimento.</div>
     </form>

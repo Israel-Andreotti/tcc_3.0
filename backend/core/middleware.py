@@ -19,7 +19,6 @@ class ForcarTrocaSenhaMiddleware:
             and usuario.is_authenticated
             and getattr(usuario, 'deve_trocar_senha', False)
             and not request.path.startswith(settings.STATIC_URL)
-            and not request.path.startswith(settings.MEDIA_URL)
         ):
             caminhos_livres = [reverse(nome) for nome in self.CAMINHOS_LIVRES]
             if request.path not in caminhos_livres:

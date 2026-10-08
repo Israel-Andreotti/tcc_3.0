@@ -1,7 +1,8 @@
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.core.exceptions import ValidationError
 from django.db import models, transaction
-from django.db.models import Case, F, IntegerField, ProtectedError, When
+from django.db.models import Case, F, IntegerField, Prefetch, ProtectedError, When
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse, reverse_lazy
@@ -18,6 +19,7 @@ from .forms import (
     ProcedimentoEntryForm,
     SLAPrioridadeForm,
     SubcategoriaForm,
+    validar_anexos,
 )
 from .models import Anexo, Categoria, Chamado, ProcedimentoEntry, SLAPrioridade, Subcategoria
 
@@ -145,7 +147,9 @@ class ChamadoDetailView(LoginRequiredMixin, DetailView):
 
     def get_queryset(self):
         usuario = self.request.user
-        qs = Chamado.objects.select_related('solicitante', 'atendente', 'categoria', 'subcategoria').prefetch_related('anexos')
+        qs = Chamado.objects.select_related('solicitante', 'atendente', 'categoria', 'subcategoria').prefetch_related(
+            Prefetch('anexos', queryset=Anexo.objects.select_related('arquivo'))
+        )
         if usuario.is_solicitante():
             return qs.filter(solicitante=usuario)
         return qs
@@ -203,9 +207,15 @@ class ChamadoCreateView(LoginRequiredMixin, CreateView):
     def form_valid(self, form):
         form.instance.solicitante = self.request.user
         form.instance.titulo = form.instance.subcategoria.nome
-        response = super().form_valid(form)
-        for arquivo in form.cleaned_data.get('anexos') or []:
-            Anexo.objects.create(chamado=self.object, arquivo=arquivo, enviado_por=self.request.user)
+        try:
+            with transaction.atomic():
+                response = super().form_valid(form)
+                Anexo.criar_varios(self.object, form.cleaned_data.get('anexos') or [], self.request.user)
+        except ValidationError as erro:
+            # Um anexo foi recusado na validação do conteúdo: nada fica gravado (chamado nem arquivos).
+            form.instance.pk = None
+            form.add_error('anexos', erro)
+            return self.form_invalid(form)
         messages.success(self.request, 'Chamado aberto com sucesso.')
         return response
 
@@ -326,7 +336,6 @@ class ChamadoResponderView(LoginRequiredMixin, ChamadoEditavelMixin, View):
     """Resposta do solicitante a um chamado que aguarda informação dele: registra a resposta na
     linha do tempo, devolve o chamado para "em andamento" e retoma o SLA."""
 
-    @transaction.atomic
     def post(self, request, pk):
         chamado = get_object_or_404(Chamado, pk=pk, solicitante=request.user)
         if chamado.status != Chamado.Status.AGUARDANDO_SOLICITANTE:
@@ -337,15 +346,21 @@ class ChamadoResponderView(LoginRequiredMixin, ChamadoEditavelMixin, View):
             messages.error(request, 'Escreva sua resposta antes de enviar.')
             return redirect('chamados:detail', pk=pk)
 
-        ProcedimentoEntry.objects.create(
-            chamado=chamado, autor=request.user, tipo=ProcedimentoEntry.Tipo.RESPOSTA, texto=texto
-        )
-        for arquivo in request.FILES.getlist('anexos'):
-            Anexo.objects.create(chamado=chamado, arquivo=arquivo, enviado_por=request.user)
-        chamado.status = Chamado.Status.EM_ANDAMENTO
-        chamado.retomar_sla()
-        chamado.resposta_solicitante_em = timezone.now()  # notifica o técnico responsável
-        chamado.save()
+        try:
+            arquivos = validar_anexos(request.FILES.getlist('anexos'))
+            with transaction.atomic():
+                ProcedimentoEntry.objects.create(
+                    chamado=chamado, autor=request.user, tipo=ProcedimentoEntry.Tipo.RESPOSTA, texto=texto
+                )
+                Anexo.criar_varios(chamado, arquivos, request.user)
+                chamado.status = Chamado.Status.EM_ANDAMENTO
+                chamado.retomar_sla()
+                chamado.resposta_solicitante_em = timezone.now()  # notifica o técnico responsável
+                chamado.save()
+        except ValidationError as erro:
+            # Arquivo recusado: a resposta inteira é desfeita, o chamado continua aguardando.
+            messages.error(request, ' '.join(erro.messages))
+            return redirect('chamados:detail', pk=pk)
         messages.success(request, 'Resposta enviada. O chamado voltou para atendimento.')
         return redirect('chamados:detail', pk=pk)
 

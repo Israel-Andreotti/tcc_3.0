@@ -28,14 +28,14 @@ DEBUG = config('DEBUG', default=True, cast=bool)
 
 ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1', cast=Csv())
 
-# Render injeta essa variável com o hostname público do serviço.
-RENDER_EXTERNAL_HOSTNAME = config('RENDER_EXTERNAL_HOSTNAME', default=None)
-if RENDER_EXTERNAL_HOSTNAME:
-    ALLOWED_HOSTS.append(RENDER_EXTERNAL_HOSTNAME)
+# Em produção, informe o domínio público com https (ex.: https://*.koyeb.app).
+CSRF_TRUSTED_ORIGINS = config('CSRF_TRUSTED_ORIGINS', default='', cast=Csv())
 
-CSRF_TRUSTED_ORIGINS = config(
-    'CSRF_TRUSTED_ORIGINS', default='https://*.onrender.com', cast=Csv()
-)
+if not DEBUG:
+    # A hospedagem termina o HTTPS num proxy e repassa a requisição em HTTP com este cabeçalho.
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
 
 
 # Application definition
@@ -53,6 +53,7 @@ INSTALLED_APPS = [
     'usuarios',
     'chamados',
     'ativos',
+    'midia',
 ]
 
 MIDDLEWARE = [
@@ -92,11 +93,12 @@ WSGI_APPLICATION = 'config.wsgi.application'
 
 DATABASE_URL = config('DATABASE_URL', default=None)
 if DATABASE_URL:
-    # Usado em produção (ex.: Render injeta essa variável a partir do Postgres gerenciado).
+    # Usado em produção: connection string do Postgres hospedado (ex.: Neon, com ?sslmode=require).
     import dj_database_url
 
     DATABASES = {
-        'default': dj_database_url.parse(DATABASE_URL, conn_max_age=600)
+        # conn_health_checks: bancos serverless (Neon) fecham conexões ociosas; testa antes de reusar.
+        'default': dj_database_url.parse(DATABASE_URL, conn_max_age=600, conn_health_checks=True)
     }
 else:
     # Desenvolvimento local: PostgreSQL configurado pelas variáveis DB_* do .env.
@@ -152,17 +154,43 @@ STATIC_URL = 'static/'
 STATICFILES_DIRS = [BASE_DIR / 'static']
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
-STORAGES = {
-    'default': {
+# Uploads (imagens e anexos — app `midia`). Os metadados ficam no Postgres; o arquivo fica:
+# - num object storage compatível com S3 (Cloudflare R2, AWS S3, Supabase Storage) quando
+#   STORAGE_BUCKET estiver definido — servido direto pela URL pública do bucket, sem passar
+#   pelo Django (continua acessível mesmo com o servidor desligado);
+# - senão, na pasta local `uploads/` (desenvolvimento), servida pelo Django em DEBUG.
+STORAGE_BUCKET = config('STORAGE_BUCKET', default='')
+
+if STORAGE_BUCKET:
+    ARMAZENAMENTO_ARQUIVOS = {
+        'BACKEND': 'storages.backends.s3.S3Storage',
+        'OPTIONS': {
+            'bucket_name': STORAGE_BUCKET,
+            'endpoint_url': config('STORAGE_ENDPOINT_URL', default=None),  # R2/Supabase; vazio = AWS
+            'access_key': config('STORAGE_ACCESS_KEY_ID'),
+            'secret_key': config('STORAGE_SECRET_ACCESS_KEY'),
+            'region_name': config('STORAGE_REGION', default='auto'),
+            # Domínio público do bucket (ex.: pub-xxxx.r2.dev): gera URLs permanentes, sem assinatura.
+            'custom_domain': config('STORAGE_PUBLIC_DOMAIN', default=None),
+            'querystring_auth': False,
+            'default_acl': None,  # R2 não usa ACL; a leitura pública é configurada no próprio bucket
+            'file_overwrite': False,
+            # Chaves são UUIDs e nunca mudam de conteúdo: o navegador pode guardar em cache por 1 ano.
+            'object_parameters': {'CacheControl': 'public, max-age=31536000, immutable'},
+        },
+    }
+else:
+    ARMAZENAMENTO_ARQUIVOS = {
         'BACKEND': 'django.core.files.storage.FileSystemStorage',
-    },
+        'OPTIONS': {'location': BASE_DIR / 'uploads', 'base_url': '/uploads/'},
+    }
+
+STORAGES = {
+    'default': ARMAZENAMENTO_ARQUIVOS,
     'staticfiles': {
         'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
     },
 }
-
-MEDIA_URL = 'media/'
-MEDIA_ROOT = BASE_DIR / 'media'
 
 LOGIN_URL = 'usuarios:login'
 LOGIN_REDIRECT_URL = 'core:dashboard'
