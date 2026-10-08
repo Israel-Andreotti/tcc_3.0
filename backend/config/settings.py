@@ -98,7 +98,8 @@ if DATABASE_URL:
     DATABASES = {
         'default': dj_database_url.parse(DATABASE_URL, conn_max_age=600)
     }
-elif config('DB_ENGINE', default='sqlite') == 'postgresql':
+else:
+    # Desenvolvimento local: PostgreSQL configurado pelas variáveis DB_* do .env.
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.postgresql',
@@ -107,15 +108,6 @@ elif config('DB_ENGINE', default='sqlite') == 'postgresql':
             'PASSWORD': config('DB_PASSWORD', default='postgres'),
             'HOST': config('DB_HOST', default='localhost'),
             'PORT': config('DB_PORT', default='5432'),
-        }
-    }
-else:
-    # Fallback local enquanto o PostgreSQL não está instalado na máquina.
-    # Troque DB_ENGINE=postgresql no .env quando o Postgres estiver disponível.
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': BASE_DIR / 'db.sqlite3',
         }
     }
 

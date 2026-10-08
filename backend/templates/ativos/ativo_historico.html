@@ -1,0 +1,69 @@
+{% extends 'base.html' %}
+{% block title %}Histórico do ativo {{ ativo.patrimonio }}{% endblock %}
+{% block content %}
+<div class="mb-3">
+    <a href="{% url 'ativos:list' %}" class="text-decoration-none small text-muted-hd"><i class="bi bi-arrow-left"></i> Voltar</a>
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-1">
+        <h1 class="h3 m-0"><i class="bi bi-clock-history"></i> Histórico de movimentações</h1>
+        <a href="{% url 'ativos:editar' ativo.pk %}" class="btn btn-outline-primary btn-sm"><i class="bi bi-pencil"></i> Editar ativo</a>
+    </div>
+</div>
+
+<div class="hd-card mb-3">
+    <div class="d-flex flex-wrap gap-4">
+        <div><div class="small text-muted-hd">Ativo</div><div class="fw-semibold">{{ ativo.marca }} {{ ativo.modelo }}</div></div>
+        <div><div class="small text-muted-hd">Patrimônio</div><div class="fw-semibold">{{ ativo.patrimonio }}</div></div>
+        <div><div class="small text-muted-hd">Tipo</div><div>{{ ativo.get_tipo_display }}</div></div>
+        <div><div class="small text-muted-hd">Situação</div><div>{{ ativo.get_status_display }}</div></div>
+        <div><div class="small text-muted-hd">Lotação atual</div><div>{{ ativo.lotacao_display }}</div></div>
+    </div>
+</div>
+
+<div class="hd-card p-0 table-responsive">
+    <table class="table hd-table align-middle mb-0">
+        <thead>
+            <tr>
+                <th class="ps-3">Data/hora</th>
+                <th>Setor de origem</th>
+                <th>Setor de destino</th>
+                <th>Responsável anterior</th>
+                <th>Novo responsável</th>
+                <th>Executado por</th>
+                <th>Motivo</th>
+                <th class="pe-3">Situação</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for mov in movimentacoes %}
+            <tr>
+                <td class="ps-3 text-nowrap">{{ mov.data_hora|date:'d/m/Y H:i' }}</td>
+                <td>{{ mov.setor_origem|default:'—' }}</td>
+                <td>{{ mov.setor_destino|default:'—' }}</td>
+                <td>{% if mov.funcionario_origem %}{{ mov.funcionario_origem.get_full_name|default:mov.funcionario_origem.username }}{% else %}—{% endif %}</td>
+                <td>{% if mov.funcionario_destino %}{{ mov.funcionario_destino.get_full_name|default:mov.funcionario_destino.username }}{% else %}—{% endif %}</td>
+                <td>{{ mov.realizado_por.get_full_name|default:mov.realizado_por.username }}</td>
+                <td class="text-nowrap">
+                    {% if mov.chamado %}
+                    <a href="{% url 'chamados:detail' mov.chamado.pk %}">Chamado #{{ mov.chamado.pk }}</a>
+                    {% else %}
+                    Edição manual
+                    {% endif %}
+                </td>
+                <td class="pe-3">
+                    {% if mov.status == 'pendente' %}
+                    <span class="badge rounded-pill status-andamento" title="Será efetivada quando o chamado for concluído">Pendente</span>
+                    {% else %}
+                    <span class="badge rounded-pill status-resolvido">Efetivada</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="8" class="text-center text-muted-hd py-5">Nenhuma movimentação registrada para este ativo.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+<div class="form-text mt-2">
+    Movimentações pendentes ainda não alteraram a lotação; a origem é registrada no momento em que forem efetivadas.
+</div>
+{% endblock %}

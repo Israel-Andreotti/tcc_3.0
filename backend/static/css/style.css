@@ -112,6 +112,12 @@ body {
     background-color: #fef2f2;
 }
 
+/* Chamado do solicitante parado esperando a resposta dele */
+.hd-table tbody tr.hd-row-aguardando-resposta {
+    background-color: #fffbeb;
+    box-shadow: inset 4px 0 0 #f59e0b;
+}
+
 /* Botão de mostrar/ocultar senha */
 .hd-password-wrapper {
     position: relative;
@@ -310,6 +316,10 @@ body {
 .sla-tempo.sla-atencao { color: #b45309; }
 .sla-tempo.sla-critico { color: #b91c1c; }
 
+/* SLA pausado (chamado aguardando o solicitante) */
+.sla-bar-fill.sla-pausado { background-color: #94a3b8; }
+.sla-tempo.sla-pausado { color: #64748b; }
+
 /* Título com hierarquia entre ID e texto */
 .hd-ticket-id {
     color: var(--hd-text-muted);
@@ -368,6 +378,13 @@ body {
     border-color: #a855f7;
     color: #6d28d9;
 }
+
+.hd-timeline-marker.marker-resposta {
+    border-color: #3b82f6;
+    color: #1d4ed8;
+}
+
+.badge.badge-resposta { background-color: #dbeafe; color: #1d4ed8; }
 
 .hd-timeline-content {
     background: #f8fafc;

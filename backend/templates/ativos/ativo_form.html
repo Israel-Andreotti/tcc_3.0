@@ -9,6 +9,16 @@
         <div class="hd-card">
             <form method="post">
                 {% csrf_token %}
+                {% if form.non_field_errors %}
+                <div class="alert alert-danger">{% for erro in form.non_field_errors %}<div>{{ erro }}</div>{% endfor %}</div>
+                {% endif %}
+                {% if object %}
+                <div class="mb-3">
+                    <label class="form-label">Nº de patrimônio</label>
+                    <input type="text" class="form-control" value="{{ object.patrimonio }}" disabled>
+                    <div class="form-text">Gerado automaticamente pelo sistema.</div>
+                </div>
+                {% endif %}
                 {% for field in form %}
                 <div class="mb-3">
                     <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>

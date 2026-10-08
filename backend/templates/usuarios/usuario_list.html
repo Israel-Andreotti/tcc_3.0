@@ -7,7 +7,7 @@
 </div>
 
 <form method="get" class="hd-card mb-3 d-flex flex-wrap gap-2 align-items-center">
-    <div class="hd-search" style="max-width: 320px;">
+    <div class="hd-search" style="flex: 1 1 380px; min-width: min(350px, 100%); max-width: 400px;">
         <button type="submit" class="hd-search-btn" aria-label="Buscar"><i class="bi bi-search"></i></button>
         <input type="text" name="q" value="{{ q }}" class="form-control" placeholder="Buscar por nome, usuário ou matrícula...">
     </div>
@@ -17,7 +17,7 @@
         <option value="{{ valor }}" {% if valor == perfil_selecionado %}selected{% endif %}>{{ label }}</option>
         {% endfor %}
     </select>
-    <select name="status" class="form-select" style="max-width: 160px;" onchange="this.form.submit()">
+    <select name="status" class="form-select" style="min-width: 175px; max-width: 190px;" onchange="this.form.submit()">
         <option value="">Todos os status</option>
         <option value="ativo" {% if status_selecionado == 'ativo' %}selected{% endif %}>Ativo</option>
         <option value="inativo" {% if status_selecionado == 'inativo' %}selected{% endif %}>Inativo</option>
@@ -62,23 +62,7 @@
                 </td>
                 <td class="pe-3">
                     <div class="d-flex gap-1 justify-content-end">
-                        <a href="{% url 'usuarios:editar' usuario.pk %}" class="btn btn-outline-primary btn-sm" title="Editar"><i class="bi bi-pencil"></i></a>
-                        <form method="post" action="{% url 'usuarios:resetar_senha' usuario.pk %}" class="m-0"
-                              onsubmit="return confirm('Gerar uma nova senha temporária para {{ usuario }}?');">
-                            {% csrf_token %}
-                            <button type="submit" class="btn btn-outline-secondary btn-sm" title="Resetar senha"><i class="bi bi-key"></i></button>
-                        </form>
-                        {% if usuario != request.user %}
-                        <form method="post" action="{% url 'usuarios:toggle_ativo' usuario.pk %}" class="m-0"
-                              onsubmit="return confirm('{% if usuario.is_active %}Desativar{% else %}Reativar{% endif %} {{ usuario }}?');">
-                            {% csrf_token %}
-                            {% if usuario.is_active %}
-                            <button type="submit" class="btn btn-outline-danger btn-sm" title="Desativar"><i class="bi bi-slash-circle"></i></button>
-                            {% else %}
-                            <button type="submit" class="btn btn-outline-success btn-sm" title="Reativar"><i class="bi bi-check-circle"></i></button>
-                            {% endif %}
-                        </form>
-                        {% endif %}
+                        <a href="{% url 'usuarios:editar' usuario.pk %}" class="btn btn-outline-primary btn-sm" title="Editar, resetar senha ou desativar"><i class="bi bi-pencil"></i></a>
                     </div>
                 </td>
             </tr>

@@ -4,30 +4,26 @@ from .models import Ativo
 
 
 class AtivoCadastroForm(forms.ModelForm):
-    """Cadastro inicial: todo ativo novo entra disponível, lotado na TI."""
+    """Cadastro inicial: todo ativo novo entra disponível, lotado na TI. O patrimônio é gerado automaticamente."""
 
     class Meta:
         model = Ativo
-        fields = ['marca', 'modelo', 'tipo', 'patrimonio']
-        labels = {'patrimonio': 'Nº de patrimônio'}
+        fields = ['marca', 'modelo', 'tipo']
         widgets = {
             'marca': forms.TextInput(attrs={'class': 'form-control', 'autofocus': True}),
             'modelo': forms.TextInput(attrs={'class': 'form-control'}),
             'tipo': forms.Select(attrs={'class': 'form-select'}),
-            'patrimonio': forms.TextInput(attrs={'class': 'form-control'}),
         }
 
 
 class AtivoEditarForm(forms.ModelForm):
     class Meta:
         model = Ativo
-        fields = ['marca', 'modelo', 'tipo', 'patrimonio', 'status', 'setor', 'funcionario']
-        labels = {'patrimonio': 'Nº de patrimônio'}
+        fields = ['marca', 'modelo', 'tipo', 'status', 'setor', 'funcionario']
         widgets = {
             'marca': forms.TextInput(attrs={'class': 'form-control', 'autofocus': True}),
             'modelo': forms.TextInput(attrs={'class': 'form-control'}),
             'tipo': forms.Select(attrs={'class': 'form-select'}),
-            'patrimonio': forms.TextInput(attrs={'class': 'form-control'}),
             'status': forms.Select(attrs={'class': 'form-select'}),
             'setor': forms.Select(attrs={'class': 'form-select'}),
             'funcionario': forms.HiddenInput(),

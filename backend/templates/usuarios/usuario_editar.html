@@ -4,7 +4,14 @@
 <div class="row justify-content-center">
     <div class="col-md-6">
         <h1 class="h3 mb-3"><i class="bi bi-pencil-square"></i> Editar usuário</h1>
-        <p class="text-muted-hd mb-3">{{ object.matricula }} &middot; {{ object.username }}</p>
+        <p class="text-muted-hd mb-3">
+            {{ object.matricula }} &middot; {{ object.username }} &middot;
+            {% if object.is_active %}
+            <span class="badge rounded-pill status-resolvido">Ativo</span>
+            {% else %}
+            <span class="badge rounded-pill status-fechado">Inativo</span>
+            {% endif %}
+        </p>
         <div class="hd-card">
             <form method="post">
                 {% csrf_token %}
@@ -32,6 +39,51 @@
                     <a href="{% url 'usuarios:list' %}" class="btn btn-outline-secondary">Cancelar</a>
                 </div>
             </form>
+        </div>
+
+        <div class="hd-card mt-3">
+            <h2 class="h6 text-uppercase text-muted-hd mb-3">Ações da conta</h2>
+
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+                <div>
+                    <div class="fw-semibold">Resetar senha</div>
+                    <div class="small text-muted-hd">Gera uma senha temporária; o usuário troca no próximo login.</div>
+                </div>
+                <form method="post" action="{% url 'usuarios:resetar_senha' object.pk %}" class="m-0"
+                      onsubmit="return confirm('Gerar uma nova senha temporária para {{ object }}?');">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-outline-secondary"><i class="bi bi-key"></i> Resetar senha</button>
+                </form>
+            </div>
+
+            <hr>
+
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+                {% if object.is_active %}
+                <div>
+                    <div class="fw-semibold">Desativar usuário</div>
+                    <div class="small text-muted-hd">Bloqueia o login. O histórico de chamados e ativos é mantido.</div>
+                </div>
+                {% else %}
+                <div>
+                    <div class="fw-semibold">Reativar usuário</div>
+                    <div class="small text-muted-hd">Libera o login novamente.</div>
+                </div>
+                {% endif %}
+                {% if object == request.user %}
+                <span class="small text-muted-hd">Você não pode desativar a própria conta.</span>
+                {% else %}
+                <form method="post" action="{% url 'usuarios:toggle_ativo' object.pk %}" class="m-0"
+                      onsubmit="return confirm('{% if object.is_active %}Desativar{% else %}Reativar{% endif %} {{ object }}?');">
+                    {% csrf_token %}
+                    {% if object.is_active %}
+                    <button type="submit" class="btn btn-outline-danger"><i class="bi bi-slash-circle"></i> Desativar</button>
+                    {% else %}
+                    <button type="submit" class="btn btn-outline-success"><i class="bi bi-check-circle"></i> Reativar</button>
+                    {% endif %}
+                </form>
+                {% endif %}
+            </div>
         </div>
     </div>
 </div>

@@ -1,15 +1,16 @@
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.db import models
-from django.db.models import ProtectedError
+from django.db import models, transaction
+from django.db.models import Case, F, IntegerField, ProtectedError, When
+from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect
-from django.urls import reverse_lazy
+from django.urls import reverse, reverse_lazy
 from django.utils import timezone
 from django.views.generic import CreateView, DetailView, ListView, UpdateView, View
 
 from ativos.models import Ativo, MovimentacaoAtivo
 from core.mixins import AdministradorRequiredMixin, AtendenteRequiredMixin
-from usuarios.models import Setor
+from usuarios.models import Setor, Usuario
 
 from .forms import (
     CategoriaForm,
@@ -18,7 +19,7 @@ from .forms import (
     SLAPrioridadeForm,
     SubcategoriaForm,
 )
-from .models import Anexo, Categoria, Chamado, SLAPrioridade, Subcategoria
+from .models import Anexo, Categoria, Chamado, ProcedimentoEntry, SLAPrioridade, Subcategoria
 
 # Ordem de urgência (mais urgente primeiro) e descrição curta de cada prioridade,
 # usadas na tela do catálogo de serviços.
@@ -29,6 +30,17 @@ PRIORIDADE_DESCRICOES = {
     'media': 'Impacto moderado no trabalho do solicitante',
     'baixa': 'Sem impacto imediato na operação',
 }
+
+
+class ChamadoEditavelMixin:
+    """Bloqueia ações em chamados já encerrados (resolvidos/fechados), mesmo via POST direto."""
+
+    def dispatch(self, request, *args, **kwargs):
+        chamado = get_object_or_404(Chamado, pk=kwargs['pk'])
+        if chamado.encerrado:
+            messages.error(request, 'Este chamado já foi encerrado e não pode mais ser alterado.')
+            return redirect('chamados:detail', pk=chamado.pk)
+        return super().dispatch(request, *args, **kwargs)
 
 
 class ChamadoListView(LoginRequiredMixin, ListView):
@@ -45,8 +57,13 @@ class ChamadoListView(LoginRequiredMixin, ListView):
         if usuario.is_solicitante():
             qs = qs.filter(solicitante=usuario)
         else:
-            # fila de trabalho do técnico: só chamados ainda em aberto
-            qs = qs.exclude(status__in=[Chamado.Status.RESOLVIDO, Chamado.Status.FECHADO])
+            # Fila de trabalho do técnico: só chamados ainda em aberto, por urgência:
+            # 1. SLA correndo antes de SLA pausado (aguardando o solicitante vai pro fim);
+            # 2. prazo de SLA mais próximo primeiro — estourados já ficam no topo, e a prioridade
+            #    entra por tabela (crítico tem prazo bem menor que baixa).
+            qs = qs.exclude(status__in=[Chamado.Status.RESOLVIDO, Chamado.Status.FECHADO]).annotate(
+                sla_pausado_ordem=Case(When(sla_pausado_em__isnull=False, then=1), default=0, output_field=IntegerField())
+            ).order_by('sla_pausado_ordem', F('prazo_sla').asc(nulls_last=True), 'criado_em')
 
         termo = self.request.GET.get('q', '').strip()
         if termo:
@@ -79,6 +96,13 @@ class ChamadoListView(LoginRequiredMixin, ListView):
         context['categoria_selecionada'] = self.request.GET.get('categoria', '')
         context['status_choices'] = Chamado.Status.choices
         context['categorias'] = Categoria.objects.order_by('ordem', 'nome')
+        if usuario.is_solicitante():
+            # Independe de filtro/paginação: alimenta o pop-up e o aviso de "precisa da sua resposta".
+            context['aguardando_resposta'] = list(
+                Chamado.objects.filter(solicitante=usuario, status=Chamado.Status.AGUARDANDO_SOLICITANTE)
+                .select_related('subcategoria')
+                .order_by('sla_pausado_em')
+            )
         if not usuario.is_solicitante():
             context['atendente_selecionado'] = self.request.GET.get('atendente', '')
             context['tecnicos'] = usuario.__class__.objects.filter(
@@ -126,9 +150,18 @@ class ChamadoDetailView(LoginRequiredMixin, DetailView):
             return qs.filter(solicitante=usuario)
         return qs
 
+    def get(self, request, *args, **kwargs):
+        response = super().get(request, *args, **kwargs)
+        # O técnico responsável abriu o chamado: a resposta do solicitante deixa de ser "nova".
+        # update() direto para não mexer em atualizado_em.
+        if self.object.resposta_solicitante_em and self.object.atendente_id == request.user.pk:
+            Chamado.objects.filter(pk=self.object.pk).update(resposta_solicitante_em=None)
+        return response
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['pode_gerenciar'] = self.request.user.is_authenticated and not self.request.user.is_solicitante()
+        context['pode_editar'] = context['pode_gerenciar'] and not self.object.encerrado
         if context['pode_gerenciar']:
             context['procedimento_form'] = ProcedimentoEntryForm(initial={'tipo': 'publico'})
             context['procedimentos'] = self.object.procedimentos.select_related('autor')
@@ -139,8 +172,21 @@ class ChamadoDetailView(LoginRequiredMixin, DetailView):
             context['movimentacoes_pendentes'] = self.object.movimentacoes_ativo.filter(
                 status=MovimentacaoAtivo.Status.PENDENTE
             ).select_related('ativo', 'setor_destino', 'funcionario_destino')
+            context['movimentacoes_efetivadas'] = self.object.movimentacoes_ativo.filter(
+                status=MovimentacaoAtivo.Status.EFETIVADA
+            ).select_related('ativo', 'setor_origem', 'setor_destino', 'funcionario_origem', 'funcionario_destino')
+            context['funcionarios_atribuiveis'] = funcionarios_atribuiveis(self.object.setor)
         else:
-            context['procedimentos'] = self.object.procedimentos.filter(tipo='publico').select_related('autor')
+            # Solicitante vê procedimentos públicos e as próprias respostas, nunca as notas internas.
+            context['procedimentos'] = self.object.procedimentos.exclude(
+                tipo=ProcedimentoEntry.Tipo.INTERNO
+            ).select_related('autor')
+            context['pode_responder'] = self.object.status == Chamado.Status.AGUARDANDO_SOLICITANTE
+            if context['pode_responder']:
+                # Última orientação pública da equipe: é o que o solicitante precisa responder.
+                context['pedido_tecnico'] = self.object.procedimentos.filter(
+                    tipo=ProcedimentoEntry.Tipo.PUBLICO
+                ).select_related('autor').last()
         return context
 
 
@@ -167,7 +213,7 @@ class ChamadoCreateView(LoginRequiredMixin, CreateView):
         return reverse_lazy('chamados:detail', kwargs={'pk': self.object.pk})
 
 
-class ChamadoPegarView(AtendenteRequiredMixin, View):
+class ChamadoPegarView(AtendenteRequiredMixin, ChamadoEditavelMixin, View):
     def post(self, request, pk):
         chamado = get_object_or_404(Chamado, pk=pk)
         chamado.atendente = request.user
@@ -178,7 +224,7 @@ class ChamadoPegarView(AtendenteRequiredMixin, View):
         return redirect('chamados:detail', pk=pk)
 
 
-class ProcedimentoEntryCreateView(AtendenteRequiredMixin, View):
+class ProcedimentoEntryCreateView(AtendenteRequiredMixin, ChamadoEditavelMixin, View):
     def post(self, request, pk):
         chamado = get_object_or_404(Chamado, pk=pk)
         form = ProcedimentoEntryForm(request.POST)
@@ -193,24 +239,19 @@ class ProcedimentoEntryCreateView(AtendenteRequiredMixin, View):
         return redirect('chamados:detail', pk=pk)
 
 
-class ChamadoConcluirView(AtendenteRequiredMixin, View):
+class ChamadoConcluirView(AtendenteRequiredMixin, ChamadoEditavelMixin, View):
+    @transaction.atomic
     def post(self, request, pk):
         chamado = get_object_or_404(Chamado, pk=pk)
+        chamado.retomar_sla()  # se estava aguardando o solicitante, contabiliza a pausa até agora
         chamado.status = Chamado.Status.RESOLVIDO
         chamado.fechado_em = timezone.now()
         chamado.save()
 
-        pendentes = chamado.movimentacoes_ativo.filter(status=MovimentacaoAtivo.Status.PENDENTE)
+        pendentes = chamado.movimentacoes_ativo.filter(status=MovimentacaoAtivo.Status.PENDENTE).select_related('ativo')
         efetivadas = 0
         for movimentacao in pendentes:
-            ativo = movimentacao.ativo
-            ativo.setor = movimentacao.setor_destino
-            ativo.funcionario = movimentacao.funcionario_destino
-            ativo.status = Ativo.Status.EM_USO
-            ativo.save()
-            movimentacao.status = MovimentacaoAtivo.Status.EFETIVADA
-            movimentacao.efetivada_em = timezone.now()
-            movimentacao.save()
+            movimentacao.efetivar()
             efetivadas += 1
 
         if efetivadas:
@@ -220,7 +261,7 @@ class ChamadoConcluirView(AtendenteRequiredMixin, View):
         return redirect('chamados:detail', pk=pk)
 
 
-class ChamadoReatribuirView(AtendenteRequiredMixin, View):
+class ChamadoReatribuirView(AtendenteRequiredMixin, ChamadoEditavelMixin, View):
     def post(self, request, pk):
         chamado = get_object_or_404(Chamado, pk=pk)
         Usuario = request.user.__class__
@@ -239,40 +280,198 @@ class ChamadoReatribuirView(AtendenteRequiredMixin, View):
         return redirect('chamados:detail', pk=pk)
 
 
-class ChamadoMovimentarAtivoView(AtendenteRequiredMixin, View):
-    """Registra a movimentação como PENDENTE a partir só do número de patrimônio:
-    - ativo lotado na TI -> entrada no setor do chamado.
-    - ativo lotado no setor do chamado -> saída de volta pra TI.
-    Nada muda de fato até o chamado ser concluído (ver ChamadoConcluirView)."""
+class ChamadoAguardarSolicitanteView(AtendenteRequiredMixin, ChamadoEditavelMixin, View):
+    """Coloca o chamado em "aguardando solicitante": exige uma mensagem pública dizendo o que
+    falta (o solicitante vê) e pausa o SLA até o atendimento ser retomado."""
+
+    @transaction.atomic
+    def post(self, request, pk):
+        chamado = get_object_or_404(Chamado, pk=pk)
+        if chamado.status == Chamado.Status.AGUARDANDO_SOLICITANTE:
+            messages.info(request, 'Este chamado já está aguardando o solicitante.')
+            return redirect('chamados:detail', pk=pk)
+        texto = request.POST.get('texto', '').strip()
+        if not texto:
+            messages.error(request, 'Descreva o que o solicitante precisa informar ou fazer.')
+            return redirect('chamados:detail', pk=pk)
+
+        ProcedimentoEntry.objects.create(
+            chamado=chamado, autor=request.user, tipo=ProcedimentoEntry.Tipo.PUBLICO, texto=texto
+        )
+        if not chamado.atendente_id:
+            chamado.atendente = request.user
+        chamado.status = Chamado.Status.AGUARDANDO_SOLICITANTE
+        chamado.pausar_sla()
+        chamado.save()
+        messages.success(request, 'Chamado aguardando o solicitante. O SLA está pausado.')
+        return redirect('chamados:detail', pk=pk)
+
+
+class ChamadoRetomarView(AtendenteRequiredMixin, ChamadoEditavelMixin, View):
+    """Técnico retoma o atendimento sem esperar a resposta do solicitante; o SLA volta a contar."""
 
     def post(self, request, pk):
         chamado = get_object_or_404(Chamado, pk=pk)
+        if chamado.status != Chamado.Status.AGUARDANDO_SOLICITANTE:
+            messages.info(request, 'Este chamado não está aguardando o solicitante.')
+            return redirect('chamados:detail', pk=pk)
+        chamado.status = Chamado.Status.EM_ANDAMENTO
+        chamado.retomar_sla()
+        chamado.save()
+        messages.success(request, 'Atendimento retomado. O SLA voltou a contar.')
+        return redirect('chamados:detail', pk=pk)
 
-        patrimonio = request.POST.get('patrimonio', '').strip()
-        ativo = Ativo.objects.filter(patrimonio__iexact=patrimonio).first()
-        if not ativo:
-            messages.error(request, f'Nenhum ativo encontrado com o patrimônio "{patrimonio}".')
+
+class ChamadoResponderView(LoginRequiredMixin, ChamadoEditavelMixin, View):
+    """Resposta do solicitante a um chamado que aguarda informação dele: registra a resposta na
+    linha do tempo, devolve o chamado para "em andamento" e retoma o SLA."""
+
+    @transaction.atomic
+    def post(self, request, pk):
+        chamado = get_object_or_404(Chamado, pk=pk, solicitante=request.user)
+        if chamado.status != Chamado.Status.AGUARDANDO_SOLICITANTE:
+            messages.info(request, 'Este chamado não está aguardando uma resposta sua.')
+            return redirect('chamados:detail', pk=pk)
+        texto = request.POST.get('texto', '').strip()
+        if not texto:
+            messages.error(request, 'Escreva sua resposta antes de enviar.')
             return redirect('chamados:detail', pk=pk)
 
-        if ativo.tem_movimentacao_pendente:
-            messages.error(request, f'O ativo "{ativo}" já tem uma movimentação pendente aguardando conclusão de chamado.')
-            return redirect('chamados:detail', pk=pk)
+        ProcedimentoEntry.objects.create(
+            chamado=chamado, autor=request.user, tipo=ProcedimentoEntry.Tipo.RESPOSTA, texto=texto
+        )
+        for arquivo in request.FILES.getlist('anexos'):
+            Anexo.objects.create(chamado=chamado, arquivo=arquivo, enviado_por=request.user)
+        chamado.status = Chamado.Status.EM_ANDAMENTO
+        chamado.retomar_sla()
+        chamado.resposta_solicitante_em = timezone.now()  # notifica o técnico responsável
+        chamado.save()
+        messages.success(request, 'Resposta enviada. O chamado voltou para atendimento.')
+        return redirect('chamados:detail', pk=pk)
 
-        setor_ti = Setor.objects.filter(nome='TI').first()
-        if ativo.setor_id == chamado.setor_id:
-            destino_setor = setor_ti
-        elif setor_ti and ativo.setor_id == setor_ti.pk:
-            destino_setor = chamado.setor
-        else:
-            messages.error(
-                request,
-                f'O ativo "{ativo}" não está lotado na TI nem em {chamado.setor} — não é possível '
-                'movimentar por este chamado.',
+
+def validar_movimentacao_ativo(chamado, patrimonio, funcionario_id=None):
+    """Regra única da movimentação via chamado, usada tanto na verificação ao vivo quanto no registro.
+
+    Com funcionário informado: ativo disponível na TI -> atribuído ao funcionário (ex.: notebook, celular).
+    Sem funcionário:
+    - ativo lotado na TI -> entrada no setor do chamado.
+    - ativo lotado no setor do chamado, ou atribuído a um funcionário -> devolvido à TI.
+    Retorna (ativo, setor_destino, funcionario_destino, erro); `erro` é None quando é permitida."""
+    if not patrimonio:
+        return None, None, None, 'Informe o número de patrimônio do ativo.'
+
+    ativo = Ativo.objects.select_related('setor', 'funcionario').filter(patrimonio__iexact=patrimonio).first()
+    if not ativo:
+        return None, None, None, f'Nenhum ativo encontrado com o patrimônio "{patrimonio}".'
+
+    if ativo.tem_movimentacao_pendente:
+        return ativo, None, None, f'O ativo "{ativo}" já tem uma movimentação pendente aguardando conclusão de chamado.'
+
+    setor_ti = Setor.objects.filter(nome='TI').first()
+    if not setor_ti:
+        return ativo, None, None, 'Setor "TI" não está cadastrado no sistema.'
+
+    if ativo.funcionario_id:
+        lotacao = f'atribuído a {ativo.funcionario.get_full_name() or ativo.funcionario.username}'
+    elif ativo.setor_id:
+        lotacao = f'lotado em {ativo.setor}'
+    else:
+        lotacao = 'sem lotação'
+
+    if funcionario_id:
+        funcionario = (
+            funcionarios_atribuiveis(chamado.setor).filter(pk=funcionario_id).first()
+            if str(funcionario_id).isdigit() else None
+        )
+        if not funcionario:
+            return ativo, None, None, f'Selecione na lista um funcionário lotado em {chamado.setor}.'
+        if ativo.funcionario_id or ativo.setor_id != setor_ti.pk:
+            return ativo, None, None, (
+                f'O ativo "{ativo}" está {lotacao}. Para atribuir a um funcionário, ele precisa estar '
+                'disponível na TI — devolva-o à TI primeiro.'
             )
-            return redirect('chamados:detail', pk=pk)
+        return ativo, None, funcionario, None
 
-        if not destino_setor:
-            messages.error(request, 'Setor "TI" não está cadastrado no sistema.')
+    if ativo.funcionario_id:
+        return ativo, setor_ti, None, None
+    if ativo.setor_id == chamado.setor_id:
+        return ativo, setor_ti, None, None
+    if ativo.setor_id == setor_ti.pk:
+        return ativo, chamado.setor, None, None
+    return ativo, None, None, (
+        f'O ativo "{ativo}" está {lotacao}, não na TI nem em {chamado.setor} — '
+        'não é possível movimentar por este chamado.'
+    )
+
+
+def funcionarios_atribuiveis(setor):
+    """Usuários que podem receber um ativo atribuído por um chamado: só os lotados no setor do
+    chamado (ativos e visíveis no sistema)."""
+    return Usuario.objects.filter(setor=setor, is_active=True, super_admin=False).order_by(
+        'first_name', 'last_name', 'username'
+    )
+
+
+def destino_display(setor, funcionario):
+    if funcionario:
+        return f'{funcionario.get_full_name() or funcionario.username} (funcionário)'
+    return str(setor)
+
+
+class ChamadoNotificacoesView(AtendenteRequiredMixin, View):
+    """JSON consultado periodicamente pelo navegador do técnico (base.html) para avisar, sem
+    recarregar a página, quando um solicitante respondeu um chamado dele."""
+
+    def get(self, request):
+        chamados = Chamado.respostas_nao_vistas(request.user).select_related('solicitante').order_by(
+            '-resposta_solicitante_em'
+        )
+        return JsonResponse({
+            'total': len(chamados),
+            'itens': [
+                {
+                    'id': ch.pk,
+                    'titulo': ch.titulo,
+                    'solicitante': ch.solicitante.get_full_name() or ch.solicitante.username,
+                    'em': ch.resposta_solicitante_em.isoformat(),
+                    'url': reverse('chamados:detail', kwargs={'pk': ch.pk}),
+                }
+                for ch in chamados[:10]
+            ],
+        })
+
+
+class ChamadoVerificarAtivoView(AtendenteRequiredMixin, ChamadoEditavelMixin, View):
+    """Verificação ao vivo (JSON) do patrimônio digitado, antes de registrar a movimentação."""
+
+    def get(self, request, pk):
+        chamado = get_object_or_404(Chamado, pk=pk)
+        ativo, setor, funcionario, erro = validar_movimentacao_ativo(
+            chamado, request.GET.get('patrimonio', '').strip(), request.GET.get('funcionario', '').strip()
+        )
+        if erro:
+            return JsonResponse({'ok': False, 'mensagem': erro})
+        if ativo.funcionario_id:
+            # Devolução: deixa claro que o vínculo com a pessoa será desfeito.
+            nome = ativo.funcionario.get_full_name() or ativo.funcionario.username
+            mensagem = f'{ativo} será desatribuído de {nome} e devolvido à {setor}.'
+        else:
+            mensagem = f'{ativo} — {ativo.lotacao_display} → {destino_display(setor, funcionario)}.'
+        return JsonResponse({'ok': True, 'mensagem': f'{mensagem} Será efetivada ao concluir o chamado.'})
+
+
+class ChamadoMovimentarAtivoView(AtendenteRequiredMixin, ChamadoEditavelMixin, View):
+    """Registra a movimentação como PENDENTE a partir só do número de patrimônio (regra em
+    validar_movimentacao_ativo). Nada muda de fato até o chamado ser concluído (ver ChamadoConcluirView)."""
+
+    def post(self, request, pk):
+        chamado = get_object_or_404(Chamado, pk=pk)
+        ativo, setor, funcionario, erro = validar_movimentacao_ativo(
+            chamado, request.POST.get('patrimonio', '').strip(), request.POST.get('funcionario', '').strip()
+        )
+        if erro:
+            messages.error(request, erro)
             return redirect('chamados:detail', pk=pk)
 
         MovimentacaoAtivo.objects.create(
@@ -280,14 +479,18 @@ class ChamadoMovimentarAtivoView(AtendenteRequiredMixin, View):
             chamado=chamado,
             setor_origem=ativo.setor,
             funcionario_origem=ativo.funcionario,
-            setor_destino=destino_setor,
+            setor_destino=setor,
+            funcionario_destino=funcionario,
             realizado_por=request.user,
             status=MovimentacaoAtivo.Status.PENDENTE,
         )
+        desatribuir = ''
+        if ativo.funcionario_id:
+            desatribuir = f' (será desatribuído de {ativo.funcionario.get_full_name() or ativo.funcionario.username})'
         messages.success(
             request,
-            f'Movimentação de "{ativo}" para {destino_setor} registrada como pendente — '
-            'só será efetivada quando este chamado for concluído.',
+            f'Movimentação de "{ativo}" para {destino_display(setor, funcionario)}{desatribuir} registrada como '
+            'pendente — só será efetivada quando este chamado for concluído.',
         )
         return redirect('chamados:detail', pk=pk)
 

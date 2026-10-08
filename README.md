@@ -1,11 +1,11 @@
 # Sistema de Gerenciamento de Chamados
 
-TCC — sistema de gerenciamento de chamados (service desk) com Django full-stack (backend + frontend via templates), PostgreSQL (ou SQLite em desenvolvimento) e RBAC por perfil de usuário (administrador, atendente, solicitante).
+TCC — sistema de gerenciamento de chamados (service desk) com Django full-stack (backend + frontend via templates), PostgreSQL e RBAC por perfil de usuário (administrador, atendente, solicitante).
 
 ## Pré-requisitos
 
 - Python 3.11+
-- PostgreSQL 14+ (opcional em desenvolvimento — veja [Banco de dados](#banco-de-dados))
+- PostgreSQL 14+
 
 ## Instalação
 
@@ -37,16 +37,16 @@ Variáveis disponíveis no `.env`:
 | `SECRET_KEY` | Chave secreta do Django | valor de desenvolvimento incluso |
 | `DEBUG` | Modo debug | `True` |
 | `ALLOWED_HOSTS` | Hosts permitidos, separados por vírgula | `localhost,127.0.0.1` |
-| `DB_ENGINE` | `sqlite` ou `postgresql` | `sqlite` |
-| `DB_NAME` / `DB_USER` / `DB_PASSWORD` / `DB_HOST` / `DB_PORT` | Credenciais do PostgreSQL (usadas só se `DB_ENGINE=postgresql`) | `tcc_chamados` / `postgres` / `postgres` / `localhost` / `5432` |
+| `DB_NAME` / `DB_USER` / `DB_PASSWORD` / `DB_HOST` / `DB_PORT` | Credenciais do PostgreSQL local | `tcc_chamados` / `postgres` / `postgres` / `localhost` / `5432` |
 
 ## Banco de dados
 
-**Desenvolvimento rápido (padrão):** com `DB_ENGINE=sqlite` no `.env`, nenhum setup extra é necessário — o Django cria `db.sqlite3` automaticamente.
+O sistema usa PostgreSQL em todos os ambientes.
 
-**PostgreSQL:**
 1. Crie o banco: `createdb tcc_chamados` (ou via `psql`/pgAdmin)
-2. No `.env`, defina `DB_ENGINE=postgresql` e ajuste as demais variáveis `DB_*`
+2. No `.env`, ajuste as variáveis `DB_*` com as credenciais do seu PostgreSQL
+
+Em produção (Render), a variável `DATABASE_URL` é injetada automaticamente e tem prioridade sobre as `DB_*`.
 
 Depois, rode as migrations:
 

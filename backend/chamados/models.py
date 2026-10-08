@@ -131,6 +131,12 @@ class Chamado(models.Model):
     atualizado_em = models.DateTimeField(auto_now=True)
     prazo_sla = models.DateTimeField(null=True, blank=True)
     fechado_em = models.DateTimeField(null=True, blank=True)
+    # Pausa do SLA enquanto o chamado aguarda o solicitante: ao retomar, o tempo parado é
+    # somado em `sla_tempo_pausado` e o `prazo_sla` é estendido na mesma medida.
+    sla_pausado_em = models.DateTimeField(null=True, blank=True)
+    sla_tempo_pausado = models.DurationField(default=timedelta(0))
+    # Quando o solicitante respondeu e o técnico responsável ainda não abriu o chamado (notificação).
+    resposta_solicitante_em = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ['-criado_em']
@@ -153,29 +159,65 @@ class Chamado(models.Model):
             horas *= self.VIP_SLA_MULTIPLICADOR
         return horas
 
+    @classmethod
+    def respostas_nao_vistas(cls, tecnico):
+        """Chamados abertos do técnico em que o solicitante respondeu e ele ainda não abriu."""
+        return cls.objects.filter(atendente=tecnico, resposta_solicitante_em__isnull=False).exclude(
+            status__in=[cls.Status.RESOLVIDO, cls.Status.FECHADO]
+        )
+
+    @property
+    def sla_pausado(self):
+        return self.sla_pausado_em is not None
+
+    def pausar_sla(self):
+        """Congela o relógio do SLA (não salva — quem chama salva o chamado)."""
+        if not self.sla_pausado:
+            self.sla_pausado_em = timezone.now()
+
+    def retomar_sla(self):
+        """Volta a contar o SLA, estendendo o prazo pelo tempo que ficou pausado (não salva)."""
+        if self.sla_pausado:
+            pausa = timezone.now() - self.sla_pausado_em
+            self.sla_tempo_pausado += pausa
+            if self.prazo_sla:
+                self.prazo_sla += pausa
+            self.sla_pausado_em = None
+
+    def _sla_referencia(self):
+        # Enquanto pausado, o "agora" do SLA fica parado no início da pausa.
+        return self.sla_pausado_em or timezone.now()
+
     @property
     def sla_estourado(self):
         if self.status in (self.Status.RESOLVIDO, self.Status.FECHADO):
             return False
-        return bool(self.prazo_sla and timezone.now() > self.prazo_sla)
+        return bool(self.prazo_sla and self._sla_referencia() > self.prazo_sla)
 
     @property
-    def sla_concluido(self):
+    def encerrado(self):
+        """Chamado resolvido/fechado fica somente leitura: nenhuma ação da equipe é aceita."""
         return self.status in (self.Status.RESOLVIDO, self.Status.FECHADO)
 
     @property
+    def sla_concluido(self):
+        return self.encerrado
+
+    @property
     def sla_percentual(self):
-        """Percentual do prazo de SLA já decorrido, de 0 a 100 (100 = estourado)."""
+        """Percentual do prazo de SLA já decorrido, de 0 a 100 (100 = estourado), descontando as pausas."""
         if not self.prazo_sla:
             return 0
-        total = (self.prazo_sla - self.criado_em).total_seconds()
-        decorrido = (timezone.now() - self.criado_em).total_seconds()
+        total = (self.prazo_sla - self.criado_em - self.sla_tempo_pausado).total_seconds()
+        decorrido = (self._sla_referencia() - self.criado_em - self.sla_tempo_pausado).total_seconds()
         if total <= 0:
             return 100
         return max(0, min(100, round(decorrido / total * 100)))
 
     @property
     def sla_cor(self):
+        if self.sla_pausado:
+            return 'pausado'
         percentual = self.sla_percentual
         if percentual >= 100:
             return 'critico'
@@ -187,12 +229,13 @@ class Chamado(models.Model):
     def sla_tempo_restante_display(self):
         if not self.prazo_sla:
             return '-'
-        delta = self.prazo_sla - timezone.now()
+        delta = self.prazo_sla - self._sla_referencia()
         segundos = delta.total_seconds()
         horas = int(abs(segundos) // 3600)
         minutos = int((abs(segundos) % 3600) // 60)
         texto = f'{horas}h {minutos}min'
-        return f'Atrasado há {texto}' if segundos < 0 else f'{texto} restantes'
+        texto = f'Atrasado há {texto}' if segundos < 0 else f'{texto} restantes'
+        return f'Pausado · {texto}' if self.sla_pausado else texto
 
 
 class Comentario(models.Model):
@@ -244,6 +287,8 @@ class ProcedimentoEntry(models.Model):
     class Tipo(models.TextChoices):
         PUBLICO = 'publico', 'Procedimento'
         INTERNO = 'interno', 'Nota interna'
+        # Registrada pelo próprio solicitante ao responder um chamado "aguardando solicitante".
+        RESPOSTA = 'resposta', 'Resposta do solicitante'
 
     chamado = models.ForeignKey(Chamado, on_delete=models.CASCADE, related_name='procedimentos')
     autor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)

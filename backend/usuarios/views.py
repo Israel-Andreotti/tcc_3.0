@@ -128,19 +128,19 @@ class UsuarioListView(AtendenteRequiredMixin, ListView):
 class UsuarioToggleAtivoView(AtendenteRequiredMixin, View):
     def post(self, request, pk):
         usuario = get_object_or_404(Usuario, pk=pk)
-        if usuario == request.user:
-            messages.error(request, 'Você não pode desativar a própria conta.')
-            return redirect('usuarios:list')
         if usuario.super_admin:
             messages.error(request, 'Contas de superadministrador não podem ser desativadas.')
             return redirect('usuarios:list')
+        if usuario == request.user:
+            messages.error(request, 'Você não pode desativar a própria conta.')
+            return redirect('usuarios:editar', pk=usuario.pk)
         usuario.is_active = not usuario.is_active
         usuario.save(update_fields=['is_active'])
         if usuario.is_active:
             messages.success(request, f'{usuario} reativado.')
         else:
             messages.success(request, f'{usuario} desativado.')
-        return redirect('usuarios:list')
+        return redirect('usuarios:editar', pk=usuario.pk)
 
 
 class UsuarioResetarSenhaView(AtendenteRequiredMixin, View):

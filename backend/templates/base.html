@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-{% load static %}
+{% load static chamado_extras %}
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
@@ -23,12 +23,14 @@
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="collapse navbar-collapse" id="navbarMain">
-                <div class="d-flex flex-column flex-lg-row align-items-lg-center gap-lg-3 mt-3 mt-lg-0 ms-lg-auto">
+                <div class="d-flex flex-column flex-lg-row align-items-lg-center gap-lg-4 mt-3 mt-lg-0 mx-lg-auto px-lg-4">
                     {% if user.perfil == 'solicitante' %}
-                    <a class="nav-link text-light{% if request.path == '/chamados/' %} active{% endif %}" href="{% url 'chamados:list' %}"><i class="bi bi-ticket-detailed"></i> Meus chamados</a>
+                    {% chamados_aguardando_resposta user as qtd_aguardando %}
+                    <a class="nav-link text-light{% if request.path == '/chamados/' %} active{% endif %}" href="{% url 'chamados:list' %}"><i class="bi bi-ticket-detailed"></i> Meus chamados{% if qtd_aguardando %} <span class="badge rounded-pill bg-warning text-dark" title="{{ qtd_aguardando }} chamado{{ qtd_aguardando|pluralize }} aguardando sua resposta">{{ qtd_aguardando }}</span>{% endif %}</a>
                     <a class="nav-link text-light{% if '/chamados/novo/' in request.path %} active{% endif %}" href="{% url 'chamados:create' %}"><i class="bi bi-plus-circle"></i> Abrir chamado</a>
                     {% else %}
-                    <a class="nav-link text-light{% if request.path == '/chamados/' %} active{% endif %}" href="{% url 'chamados:list' %}"><i class="bi bi-list-task"></i> Fila de chamados</a>
+                    {% respostas_nao_vistas user as qtd_respostas %}
+                    <a class="nav-link text-light{% if request.path == '/chamados/' %} active{% endif %}" href="{% url 'chamados:list' %}"><i class="bi bi-list-task"></i> Fila de chamados <span id="hdBadgeRespostas" class="badge rounded-pill bg-info text-dark{% if not qtd_respostas %} d-none{% endif %}" title="Respostas de solicitantes que você ainda não viu">{{ qtd_respostas }}</span></a>
                     <a class="nav-link text-light{% if '/historico/' in request.path %} active{% endif %}" href="{% url 'chamados:historico' %}"><i class="bi bi-clock-history"></i> Histórico</a>
                     <a class="nav-link text-light{% if '/catalogo/' in request.path %} active{% endif %}" href="{% url 'chamados:catalogo' %}"><i class="bi bi-journal-text"></i> Catálogo de serviços</a>
                     <a class="nav-link text-light{% if '/ativos/' in request.path %} active{% endif %}" href="{% url 'ativos:list' %}"><i class="bi bi-pc-display"></i> Ativos</a>
@@ -37,6 +39,8 @@
                     <a class="nav-link text-light{% if '/setores' in request.path %} active{% endif %}" href="{% url 'usuarios:setores' %}"><i class="bi bi-diagram-3"></i> Setores</a>
                     {% endif %}
                     {% endif %}
+                </div>
+                <div class="d-flex flex-column flex-lg-row align-items-lg-center gap-lg-3 mt-2 mt-lg-0">
                     <span class="text-light small hd-navbar-userinfo pt-2 pt-lg-0 ps-lg-3">
                         <i class="bi bi-person-circle"></i>
                         {{ user.get_full_name|default:user.username }} &middot; {{ user.get_perfil_display }}
@@ -188,6 +192,7 @@
                     opt.addEventListener('click', function () {
                         input.value = item.label;
                         hidden.value = item.id;
+                        hidden.dispatchEvent(new Event('change'));
                         sugestoesEl.classList.add('d-none');
                     });
                     sugestoesEl.appendChild(opt);
@@ -204,7 +209,10 @@
             }
 
             input.addEventListener('input', function () {
-                hidden.value = '';
+                if (hidden.value) {
+                    hidden.value = '';
+                    hidden.dispatchEvent(new Event('change'));
+                }
                 filtrarEMostrar(input.value.trim().toLowerCase());
             });
             input.addEventListener('focus', function () {
@@ -227,5 +235,80 @@
         });
     });
     </script>
+
+    {% if user.is_authenticated and user.perfil != 'solicitante' %}
+    {# Avisos discretos pro técnico (toasts no canto, sem bloquear a tela) quando um solicitante responde. #}
+    <div class="toast-container position-fixed bottom-0 end-0 p-3" id="hdToasts" style="z-index: 1090;"
+         data-url="{% url 'chamados:notificacoes' %}" aria-live="polite" aria-atomic="false"></div>
+    <script>
+    document.addEventListener('DOMContentLoaded', function () {
+        var container = document.getElementById('hdToasts');
+        var badge = document.getElementById('hdBadgeRespostas');
+        if (!container || !window.fetch) return;
+        var INTERVALO_MS = 30000;
+        var CHAVE = 'hd-respostas-avisadas';
+
+        // Respostas já avisadas nesta sessão (id + horário), pra não repetir o toast a cada consulta.
+        function lerAvisadas() {
+            try { return JSON.parse(sessionStorage.getItem(CHAVE) || '[]'); } catch (e) { return []; }
+        }
+        function salvarAvisadas(lista) {
+            try { sessionStorage.setItem(CHAVE, JSON.stringify(lista.slice(-50))); } catch (e) {}
+        }
+
+        function mostrarToast(item) {
+            var toast = document.createElement('div');
+            toast.className = 'toast';
+            toast.setAttribute('role', 'status');
+            toast.innerHTML =
+                '<div class="toast-header">' +
+                '  <i class="bi bi-reply-fill text-primary me-2"></i>' +
+                '  <strong class="me-auto">Nova resposta</strong>' +
+                '  <small>#' + item.id + '</small>' +
+                '  <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Fechar"></button>' +
+                '</div>' +
+                '<div class="toast-body"></div>';
+            var corpo = toast.querySelector('.toast-body');
+            corpo.appendChild(document.createTextNode(item.solicitante + ' respondeu o chamado "' + item.titulo + '". '));
+            var link = document.createElement('a');
+            link.href = item.url;
+            link.className = 'fw-semibold';
+            link.textContent = 'Abrir chamado';
+            corpo.appendChild(link);
+            container.appendChild(toast);
+            toast.addEventListener('hidden.bs.toast', function () { toast.remove(); });
+            bootstrap.Toast.getOrCreateInstance(toast, { autohide: true, delay: 12000 }).show();
+        }
+
+        function consultar() {
+            if (document.hidden) return;  // aba em segundo plano: não consulta à toa
+            fetch(container.dataset.url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+                .then(function (resposta) { return resposta.ok ? resposta.json() : null; })
+                .then(function (dados) {
+                    if (!dados) return;
+                    if (badge) {
+                        badge.textContent = dados.total;
+                        badge.classList.toggle('d-none', !dados.total);
+                    }
+                    var avisadas = lerAvisadas();
+                    dados.itens.forEach(function (item) {
+                        var chave = item.id + '@' + item.em;
+                        if (avisadas.indexOf(chave) === -1) {
+                            // Já está na página do próprio chamado: não precisa avisar.
+                            if (window.location.pathname !== item.url) mostrarToast(item);
+                            avisadas.push(chave);
+                        }
+                    });
+                    salvarAvisadas(avisadas);
+                })
+                .catch(function () {});
+        }
+
+        consultar();
+        setInterval(consultar, INTERVALO_MS);
+        document.addEventListener('visibilitychange', function () { if (!document.hidden) consultar(); });
+    });
+    </script>
+    {% endif %}
 </body>
 </html>

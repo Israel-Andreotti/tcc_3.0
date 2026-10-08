@@ -10,13 +10,23 @@
         <span class="badge rounded-pill {{ chamado.prioridade|prioridade_badge }}">{{ chamado.get_prioridade_display }}</span>
         {% if chamado.sla_estourado %}<span class="badge rounded-pill bg-danger text-white"><i class="bi bi-exclamation-triangle-fill"></i> SLA estourado</span>{% endif %}
     </div>
-    {% if pode_gerenciar %}
-    <div class="d-flex gap-2">
+    {% if pode_editar %}
+    <div class="d-flex flex-wrap gap-2">
         {% if not chamado.atendente %}
         <form method="post" action="{% url 'chamados:pegar' chamado.pk %}" class="m-0">
             {% csrf_token %}
             <button type="submit" class="btn btn-success btn-sm"><i class="bi bi-hand-index-thumb"></i> Pegar chamado</button>
         </form>
+        {% endif %}
+        {% if chamado.status == 'aguardando_solicitante' %}
+        <form method="post" action="{% url 'chamados:retomar' chamado.pk %}" class="m-0">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-outline-primary btn-sm"><i class="bi bi-play-circle"></i> Retomar atendimento</button>
+        </form>
+        {% else %}
+        <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#aguardarModal">
+            <i class="bi bi-pause-circle"></i> Aguardar solicitante
+        </button>
         {% endif %}
         <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#reatribuirModal">
             <i class="bi bi-arrow-left-right"></i> Reatribuir
@@ -24,6 +34,23 @@
     </div>
     {% endif %}
 </div>
+
+{% if chamado.sla_pausado and not chamado.encerrado %}
+<div class="alert alert-secondary d-flex align-items-center gap-2">
+    <i class="bi bi-pause-circle-fill"></i>
+    <span>
+        Aguardando o solicitante desde {{ chamado.sla_pausado_em|date:'d/m/Y H:i' }} — <strong>SLA pausado</strong>.
+        {% if pode_gerenciar %}Volta a contar quando o solicitante responder ou o atendimento for retomado.{% endif %}
+    </span>
+</div>
+{% endif %}
+
+{% if pode_gerenciar and chamado.encerrado %}
+<div class="alert alert-secondary d-flex align-items-center gap-2">
+    <i class="bi bi-lock-fill"></i>
+    <span>Chamado encerrado{% if chamado.fechado_em %} em {{ chamado.fechado_em|date:'d/m/Y H:i' }}{% endif %} — somente leitura.</span>
+</div>
+{% endif %}
 
 <div class="row mb-4">
     <div class="col-lg-6">
@@ -94,18 +121,40 @@
     {% endif %}
 </div>
 
+{% if pode_responder %}
+<div class="hd-card mb-4 border border-2 border-primary">
+    <h2 class="h6 text-uppercase text-primary mb-2"><i class="bi bi-chat-left-dots-fill"></i> O técnico precisa de uma resposta sua</h2>
+    {% if pedido_tecnico %}
+    <div class="small text-muted-hd mb-1">{{ pedido_tecnico.autor }} &middot; {{ pedido_tecnico.criado_em|date:'d/m/Y H:i' }}</div>
+    <div class="mb-3">{{ pedido_tecnico.texto|linebreaks }}</div>
+    {% endif %}
+    <form method="post" action="{% url 'chamados:responder' chamado.pk %}" enctype="multipart/form-data">
+        {% csrf_token %}
+        <label class="form-label" for="respostaTexto">Sua resposta</label>
+        <textarea name="texto" id="respostaTexto" class="form-control mb-2" rows="3" required
+                  placeholder="Escreva a informação solicitada..."></textarea>
+        <label class="form-label small" for="respostaAnexos">Anexos (opcional)</label>
+        <input type="file" name="anexos" id="respostaAnexos" class="form-control mb-3" multiple>
+        <button type="submit" class="btn btn-primary"><i class="bi bi-send"></i> Enviar resposta</button>
+        <div class="form-text mt-2">Ao responder, o chamado volta para atendimento.</div>
+    </form>
+</div>
+{% endif %}
+
 <div class="hd-card mb-4">
     <h2 class="h6 text-uppercase text-muted-hd mb-3">Procedimento</h2>
     <ul class="hd-timeline">
         {% for entrada in procedimentos %}
         <li class="hd-timeline-item">
-            <div class="hd-timeline-marker {% if entrada.tipo == 'interno' %}marker-interno{% else %}marker-publico{% endif %}">
-                {% if entrada.tipo == 'interno' %}<i class="bi bi-eye-slash"></i>{% else %}<i class="bi bi-check2-circle"></i>{% endif %}
+            <div class="hd-timeline-marker marker-{{ entrada.tipo }}">
+                {% if entrada.tipo == 'interno' %}<i class="bi bi-eye-slash"></i>{% elif entrada.tipo == 'resposta' %}<i class="bi bi-reply-fill"></i>{% else %}<i class="bi bi-check2-circle"></i>{% endif %}
             </div>
             <div class="hd-timeline-content">
                 <div class="d-flex justify-content-between align-items-center flex-wrap gap-1 mb-1">
                     {% if entrada.tipo == 'interno' %}
                     <span class="badge rounded-pill status-aguardando">Nota interna</span>
+                    {% elif entrada.tipo == 'resposta' %}
+                    <span class="badge rounded-pill badge-resposta">Resposta do solicitante</span>
                     {% else %}
                     <span class="badge rounded-pill status-resolvido">Procedimento</span>
                     {% endif %}
@@ -119,7 +168,7 @@
         {% endfor %}
     </ul>
 
-    {% if pode_gerenciar %}
+    {% if pode_editar %}
     <div class="d-flex flex-column flex-md-row gap-3 align-items-md-end border-top pt-3">
         <form method="post" action="{% url 'chamados:procedimento_add' chamado.pk %}" class="flex-grow-1" id="procedimentoForm">
             {% csrf_token %}
@@ -142,7 +191,7 @@
     {% endif %}
 </div>
 
-{% if pode_gerenciar and chamado.setor %}
+{% if pode_editar and chamado.setor %}
 <div class="hd-card mb-4">
     <h2 class="h6 text-uppercase text-muted-hd mb-3"><i class="bi bi-arrow-left-right"></i> Movimentação de ativo</h2>
 
@@ -161,21 +210,67 @@
     <div class="form-text mb-3">Efetivada automaticamente quando o chamado for concluído.</div>
     {% endif %}
 
-    <form method="post" action="{% url 'chamados:movimentar_ativo' chamado.pk %}" class="d-flex flex-wrap gap-2 align-items-end">
+    <form method="post" action="{% url 'chamados:movimentar_ativo' chamado.pk %}" class="d-flex flex-wrap gap-2 align-items-end"
+          id="movimentarForm" data-verificar-url="{% url 'chamados:verificar_ativo' chamado.pk %}">
         {% csrf_token %}
         <div class="flex-grow-1" style="min-width: 200px;">
             <label class="form-label" for="movimentarPatrimonio">Nº de patrimônio</label>
-            <input type="text" name="patrimonio" id="movimentarPatrimonio" class="form-control" placeholder="Digite o patrimônio do ativo..." required>
+            <input type="text" name="patrimonio" id="movimentarPatrimonio" class="form-control" placeholder="Digite o patrimônio do ativo..." autocomplete="off" required>
         </div>
-        <button type="submit" class="btn btn-primary"><i class="bi bi-box-arrow-in-right"></i> Registrar movimentação</button>
+        <div class="flex-grow-1" style="min-width: 240px;">
+            <label class="form-label d-flex justify-content-between gap-2" for="movimentarFuncionarioBusca">
+                <span>Atribuir a funcionário de {{ chamado.setor }} <span class="text-muted-hd small">(opcional)</span></span>
+                {% if chamado.solicitante in funcionarios_atribuiveis %}
+                <button type="button" class="btn btn-link btn-sm p-0" id="movimentarUsarSolicitante"
+                        data-id="{{ chamado.solicitante.pk }}"
+                        data-label="{{ chamado.solicitante.get_full_name|default:chamado.solicitante.username }} — {{ chamado.solicitante.matricula }}">Usar solicitante</button>
+                {% endif %}
+            </label>
+            <div class="position-relative">
+                <input type="text" class="form-control" id="movimentarFuncionarioBusca" autocomplete="off"
+                       {% if funcionarios_atribuiveis %}placeholder="Nome ou matrícula (ex.: notebook, celular)"{% else %}placeholder="Nenhum usuário ativo lotado em {{ chamado.setor }}" disabled{% endif %}
+                       data-autocomplete-input
+                       data-autocomplete-hidden="movimentarFuncionario"
+                       data-autocomplete-opcoes="movimentarFuncionarioOpcoes"
+                       data-autocomplete-sugestoes="movimentarFuncionarioSugestoes">
+                <div id="movimentarFuncionarioSugestoes" class="list-group position-absolute w-100 d-none" style="z-index: 1000; max-height: 220px; overflow-y: auto;"></div>
+                <div id="movimentarFuncionarioOpcoes" class="d-none">
+                    {% for func in funcionarios_atribuiveis %}
+                    <span data-id="{{ func.pk }}" data-label="{{ func.get_full_name|default:func.username }} — {{ func.matricula }}"></span>
+                    {% endfor %}
+                </div>
+            </div>
+            <input type="hidden" name="funcionario" id="movimentarFuncionario">
+        </div>
+        <button type="submit" class="btn btn-primary" id="movimentarBtn" disabled><i class="bi bi-box-arrow-in-right"></i> Registrar movimentação</button>
     </form>
+    <div id="movimentarFeedback" class="alert mt-2 mb-0 py-2 d-none" role="status" aria-live="polite"></div>
     <div class="form-text mt-2">
-        Ativo lotado na <strong>TI</strong> &rarr; entrada em <strong>{{ chamado.setor }}</strong>. Ativo lotado em <strong>{{ chamado.setor }}</strong> &rarr; saída de volta pra TI.
+        Sem funcionário: ativo lotado na <strong>TI</strong> &rarr; entrada em <strong>{{ chamado.setor }}</strong>; ativo lotado em <strong>{{ chamado.setor }}</strong> ou atribuído a alguém &rarr; volta pra TI.<br>
+        Com funcionário: ativo disponível na <strong>TI</strong> &rarr; fica atribuído à pessoa (ex.: notebook, smartphone).
     </div>
 </div>
 {% endif %}
 
-{% if pode_gerenciar and chamado.status != 'resolvido' and chamado.status != 'fechado' %}
+{% if pode_gerenciar and chamado.encerrado and movimentacoes_efetivadas %}
+<div class="hd-card mb-4">
+    <h2 class="h6 text-uppercase text-muted-hd mb-3"><i class="bi bi-arrow-left-right"></i> Movimentações de ativo efetivadas</h2>
+    <ul class="list-unstyled mb-0">
+        {% for mov in movimentacoes_efetivadas %}
+        <li class="d-flex flex-wrap align-items-center gap-2{% if not forloop.last %} border-bottom pb-2 mb-2{% endif %}">
+            <i class="bi bi-pc-display"></i>
+            <a href="{% url 'ativos:historico' mov.ativo.pk %}" class="fw-semibold">{{ mov.ativo }}</a>
+            <span>{{ mov.origem_display }}</span>
+            <i class="bi bi-arrow-right text-muted-hd"></i>
+            <span>{{ mov.destino_display }}</span>
+            <span class="small text-muted-hd ms-auto">{{ mov.efetivada_em|date:'d/m/Y H:i' }}</span>
+        </li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
+
+{% if pode_editar %}
 <div class="mb-4 text-center">
     <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#confirmarResolverModal">
         <i class="bi bi-check-circle-fill"></i> Resolver chamado
@@ -183,7 +278,31 @@
 </div>
 {% endif %}
 
-{% if pode_gerenciar %}
+{% if pode_editar %}
+<div class="modal fade" id="aguardarModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <form method="post" action="{% url 'chamados:aguardar_solicitante' chamado.pk %}">
+                {% csrf_token %}
+                <div class="modal-header">
+                    <h2 class="modal-title h5"><i class="bi bi-pause-circle"></i> Aguardar solicitante</h2>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+                </div>
+                <div class="modal-body">
+                    <label class="form-label" for="aguardarTexto">O que o solicitante precisa informar ou fazer?</label>
+                    <textarea name="texto" id="aguardarTexto" class="form-control" rows="4" required
+                              placeholder="Ex.: Pode enviar um print da mensagem de erro?"></textarea>
+                    <div class="form-text">Fica visível para o solicitante como procedimento. O SLA fica pausado até ele responder ou você retomar o atendimento.</div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-pause-circle"></i> Aguardar solicitante</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <div class="modal fade" id="reatribuirModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
@@ -233,6 +352,89 @@
 </div>
 
 <script>
+// Verificação ao vivo do patrimônio na movimentação de ativo: mostra o problema (ou o destino)
+// antes do técnico clicar, e só libera o botão quando a movimentação é permitida.
+document.addEventListener('DOMContentLoaded', function () {
+    var form = document.getElementById('movimentarForm');
+    if (!form) return;
+    var campo = document.getElementById('movimentarPatrimonio');
+    var funcionario = document.getElementById('movimentarFuncionario');
+    var funcionarioBusca = document.getElementById('movimentarFuncionarioBusca');
+    var usarSolicitante = document.getElementById('movimentarUsarSolicitante');
+    var botao = document.getElementById('movimentarBtn');
+    var feedback = document.getElementById('movimentarFeedback');
+    var timer = null;
+    var ultimaConsulta = 0;
+
+    function mostrar(ok, mensagem) {
+        feedback.className = 'alert mt-2 mb-0 py-2 ' + (ok ? 'alert-success' : 'alert-danger');
+        feedback.innerHTML = '';
+        var icone = document.createElement('i');
+        icone.className = 'bi me-1 ' + (ok ? 'bi-check-circle-fill' : 'bi-exclamation-triangle-fill');
+        feedback.appendChild(icone);
+        feedback.appendChild(document.createTextNode(mensagem));
+        campo.classList.toggle('is-invalid', !ok);
+        campo.classList.toggle('is-valid', ok);
+        botao.disabled = !ok;
+    }
+
+    function limpar() {
+        feedback.className = 'alert mt-2 mb-0 py-2 d-none';
+        campo.classList.remove('is-invalid', 'is-valid');
+        botao.disabled = true;
+    }
+
+    function verificar() {
+        clearTimeout(timer);
+        botao.disabled = true;
+        var patrimonio = campo.value.trim();
+        if (!patrimonio) { limpar(); return; }
+        // Texto digitado no campo de funcionário sem escolher alguém da lista não é aceito.
+        if (funcionarioBusca.value.trim() && !funcionario.value) {
+            mostrar(false, 'Escolha o funcionário na lista de sugestões (ou apague o campo para movimentar por setor).');
+            return;
+        }
+        timer = setTimeout(function () {
+            var consulta = ++ultimaConsulta;
+            var url = form.dataset.verificarUrl + '?patrimonio=' + encodeURIComponent(patrimonio)
+                + '&funcionario=' + encodeURIComponent(funcionario.value);
+            fetch(url, {
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            })
+                .then(function (resposta) { return resposta.json(); })
+                .then(function (dados) {
+                    if (consulta === ultimaConsulta) mostrar(dados.ok, dados.mensagem);
+                })
+                .catch(function () {
+                    // Sem verificação (ex.: rede): libera o envio, o servidor valida de novo no POST.
+                    if (consulta === ultimaConsulta) { limpar(); botao.disabled = false; }
+                });
+        }, 350);
+    }
+
+    campo.addEventListener('input', verificar);
+    funcionario.addEventListener('change', verificar);
+    funcionarioBusca.addEventListener('input', function () {
+        if (!funcionarioBusca.value.trim()) verificar();
+    });
+    funcionarioBusca.addEventListener('blur', function () {
+        // Dá tempo do clique na sugestão preencher o hidden antes de validar.
+        setTimeout(verificar, 150);
+    });
+    // Só existe quando o solicitante é lotado no setor do chamado.
+    if (usarSolicitante) {
+        usarSolicitante.addEventListener('click', function () {
+            funcionarioBusca.value = usarSolicitante.dataset.label;
+            funcionario.value = usarSolicitante.dataset.id;
+            verificar();
+        });
+    }
+
+    form.addEventListener('submit', function (evento) {
+        if (botao.disabled) evento.preventDefault();
+    });
+});
+
 document.addEventListener('DOMContentLoaded', function () {
     var botaoConfirmar = document.getElementById('confirmarResolverBtn');
     if (botaoConfirmar) {

@@ -120,3 +120,10 @@ class ProcedimentoEntryForm(forms.ModelForm):
                 'placeholder': 'Descreva o procedimento realizado...',
             }),
         }
+
+    def clean_tipo(self):
+        # "Resposta do solicitante" só é criada pela view do solicitante, nunca pela equipe.
+        tipo = self.cleaned_data.get('tipo')
+        if tipo not in (ProcedimentoEntry.Tipo.PUBLICO, ProcedimentoEntry.Tipo.INTERNO):
+            raise forms.ValidationError('Tipo de registro inválido.')
+        return tipo
