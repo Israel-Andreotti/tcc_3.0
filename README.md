@@ -38,7 +38,6 @@ Variáveis disponíveis no `.env`:
 | `DEBUG` | Modo debug | `True` |
 | `ALLOWED_HOSTS` | Hosts permitidos, separados por vírgula | `localhost,127.0.0.1` |
 | `DB_NAME` / `DB_USER` / `DB_PASSWORD` / `DB_HOST` / `DB_PORT` | Credenciais do PostgreSQL local | `tcc_chamados` / `postgres` / `postgres` / `localhost` / `5432` |
-| `STORAGE_BUCKET` / `STORAGE_ENDPOINT_URL` / `STORAGE_ACCESS_KEY_ID` / `STORAGE_SECRET_ACCESS_KEY` / `STORAGE_REGION` / `STORAGE_PUBLIC_DOMAIN` | Object storage S3-compatível (R2, S3, Supabase) para imagens e anexos. Sem `STORAGE_BUCKET`, usa a pasta local `backend/uploads/` | vazio |
 
 ## Banco de dados
 

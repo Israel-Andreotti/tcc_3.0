@@ -103,22 +103,6 @@
 <div class="hd-card mb-4">
     <h2 class="h6 text-uppercase text-muted-hd mb-2">Descrição</h2>
     <p class="mb-0">{{ chamado.descricao|linebreaks }}</p>
-
-    {% if chamado.anexos.all %}
-    <hr>
-    <h2 class="h6 text-uppercase text-muted-hd mb-2">Anexos</h2>
-    <div class="d-flex flex-wrap gap-2">
-        {% for anexo in chamado.anexos.all %}
-        <a href="{{ anexo.arquivo.url }}" target="_blank" rel="noopener" title="{{ anexo.arquivo.nome_original }} ({{ anexo.arquivo.tamanho|filesizeformat }})">
-            {% if anexo.arquivo.is_imagem %}
-            <img src="{{ anexo.arquivo.url }}" alt="{{ anexo.arquivo.nome_original }}" class="hd-anexo-thumb" loading="lazy">
-            {% else %}
-            <span class="hd-anexo-file"><i class="bi bi-file-earmark-text"></i><span class="small text-truncate w-100">{{ anexo.arquivo.nome_original }}</span></span>
-            {% endif %}
-        </a>
-        {% endfor %}
-    </div>
-    {% endif %}
 </div>
 
 {% if pode_responder %}
@@ -128,14 +112,11 @@
     <div class="small text-muted-hd mb-1">{{ pedido_tecnico.autor }} &middot; {{ pedido_tecnico.criado_em|date:'d/m/Y H:i' }}</div>
     <div class="mb-3">{{ pedido_tecnico.texto|linebreaks }}</div>
     {% endif %}
-    <form method="post" action="{% url 'chamados:responder' chamado.pk %}" enctype="multipart/form-data">
+    <form method="post" action="{% url 'chamados:responder' chamado.pk %}">
         {% csrf_token %}
         <label class="form-label" for="respostaTexto">Sua resposta</label>
-        <textarea name="texto" id="respostaTexto" class="form-control mb-2" rows="3" required
+        <textarea name="texto" id="respostaTexto" class="form-control mb-3" rows="3" required
                   placeholder="Escreva a informação solicitada..."></textarea>
-        <label class="form-label small" for="respostaAnexos">Anexos (opcional)</label>
-        <input type="file" name="anexos" id="respostaAnexos" class="form-control" multiple>
-        <div class="form-text mb-3">Até 5 arquivos, 10 MB cada.</div>
         <button type="submit" class="btn btn-primary"><i class="bi bi-send"></i> Enviar resposta</button>
         <div class="form-text mt-2">Ao responder, o chamado volta para atendimento.</div>
     </form>

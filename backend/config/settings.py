@@ -53,7 +53,6 @@ INSTALLED_APPS = [
     'usuarios',
     'chamados',
     'ativos',
-    'midia',
 ]
 
 MIDDLEWARE = [
@@ -154,39 +153,10 @@ STATIC_URL = 'static/'
 STATICFILES_DIRS = [BASE_DIR / 'static']
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
-# Uploads (imagens e anexos — app `midia`). Os metadados ficam no Postgres; o arquivo fica:
-# - num object storage compatível com S3 (Cloudflare R2, AWS S3, Supabase Storage) quando
-#   STORAGE_BUCKET estiver definido — servido direto pela URL pública do bucket, sem passar
-#   pelo Django (continua acessível mesmo com o servidor desligado);
-# - senão, na pasta local `uploads/` (desenvolvimento), servida pelo Django em DEBUG.
-STORAGE_BUCKET = config('STORAGE_BUCKET', default='')
-
-if STORAGE_BUCKET:
-    ARMAZENAMENTO_ARQUIVOS = {
-        'BACKEND': 'storages.backends.s3.S3Storage',
-        'OPTIONS': {
-            'bucket_name': STORAGE_BUCKET,
-            'endpoint_url': config('STORAGE_ENDPOINT_URL', default=None),  # R2/Supabase; vazio = AWS
-            'access_key': config('STORAGE_ACCESS_KEY_ID'),
-            'secret_key': config('STORAGE_SECRET_ACCESS_KEY'),
-            'region_name': config('STORAGE_REGION', default='auto'),
-            # Domínio público do bucket (ex.: pub-xxxx.r2.dev): gera URLs permanentes, sem assinatura.
-            'custom_domain': config('STORAGE_PUBLIC_DOMAIN', default=None),
-            'querystring_auth': False,
-            'default_acl': None,  # R2 não usa ACL; a leitura pública é configurada no próprio bucket
-            'file_overwrite': False,
-            # Chaves são UUIDs e nunca mudam de conteúdo: o navegador pode guardar em cache por 1 ano.
-            'object_parameters': {'CacheControl': 'public, max-age=31536000, immutable'},
-        },
-    }
-else:
-    ARMAZENAMENTO_ARQUIVOS = {
-        'BACKEND': 'django.core.files.storage.FileSystemStorage',
-        'OPTIONS': {'location': BASE_DIR / 'uploads', 'base_url': '/uploads/'},
-    }
-
 STORAGES = {
-    'default': ARMAZENAMENTO_ARQUIVOS,
+    'default': {
+        'BACKEND': 'django.core.files.storage.FileSystemStorage',
+    },
     'staticfiles': {
         'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
     },

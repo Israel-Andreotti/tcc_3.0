@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Anexo, Categoria, Chamado, Comentario, ProcedimentoEntry, SLAPrioridade, Subcategoria
+from .models import Categoria, Chamado, Comentario, ProcedimentoEntry, SLAPrioridade, Subcategoria
 
 
 class SubcategoriaInline(admin.TabularInline):
@@ -28,17 +28,6 @@ class ProcedimentoEntryInline(admin.TabularInline):
     readonly_fields = ('autor', 'criado_em')
 
 
-class AnexoInline(admin.TabularInline):
-    model = Anexo
-    extra = 0
-    fields = ('arquivo', 'enviado_por', 'criado_em')
-    readonly_fields = fields
-
-    def has_add_permission(self, request, obj=None):
-        # Upload só pela tela do chamado, que passa pela validação/otimização do app midia.
-        return False
-
-
 @admin.register(SLAPrioridade)
 class SLAPrioridadeAdmin(admin.ModelAdmin):
     list_display = ('prioridade', 'horas')
@@ -50,4 +39,4 @@ class ChamadoAdmin(admin.ModelAdmin):
     list_filter = ('status', 'prioridade', 'categoria')
     search_fields = ('titulo', 'descricao')
     readonly_fields = ('prioridade',)  # deriva sempre da subcategoria, ver Chamado.save()
-    inlines = [ProcedimentoEntryInline, AnexoInline, ComentarioInline]
+    inlines = [ProcedimentoEntryInline, ComentarioInline]

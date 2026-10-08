@@ -251,55 +251,6 @@ class Comentario(models.Model):
         return f'Comentário de {self.autor} em #{self.chamado_id}'
 
 
-def anexo_upload_path(instance, filename):
-    # Não é mais usada (anexos ficam no banco), mas a migration 0008 ainda a referencia.
-    return f'chamados/{instance.chamado_id}/{filename}'
-
-
-class Anexo(models.Model):
-    """Arquivo anexado a um chamado. O arquivo em si é um `midia.Arquivo`: metadados no banco e
-    binário no object storage, acessado direto pela URL pública (`anexo.arquivo.url`)."""
-
-    QUANTIDADE_MAXIMA = 5  # por envio
-
-    chamado = models.ForeignKey(Chamado, on_delete=models.CASCADE, related_name='anexos')
-    arquivo = models.OneToOneField('midia.Arquivo', on_delete=models.PROTECT, related_name='anexo')
-    enviado_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
-    criado_em = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        ordering = ['criado_em']
-        verbose_name = 'Anexo'
-        verbose_name_plural = 'Anexos'
-
-    def __str__(self):
-        return self.arquivo.nome_original
-
-    @classmethod
-    def criar(cls, chamado, arquivo_enviado, enviado_por):
-        """Valida/otimiza e grava o arquivo no storage (midia) e o vincula ao chamado."""
-        from midia.services import salvar_upload
-
-        arquivo = salvar_upload(arquivo_enviado, enviado_por, somente_imagens=False)
-        return cls.objects.create(chamado=chamado, arquivo=arquivo, enviado_por=enviado_por)
-
-    @classmethod
-    def criar_varios(cls, chamado, arquivos_enviados, enviado_por):
-        """Tudo ou nada: se um arquivo for recusado, apaga do storage os que já tinham sido gravados
-        e relança o erro (quem chama deve estar numa transação, para desfazer os registros)."""
-        from django.core.files.storage import default_storage
-
-        criados = []
-        try:
-            for arquivo_enviado in arquivos_enviados:
-                criados.append(cls.criar(chamado, arquivo_enviado, enviado_por))
-        except Exception:
-            for anexo in criados:
-                default_storage.delete(anexo.arquivo.storage_key)
-            raise
-        return criados
-
-
 class ProcedimentoEntry(models.Model):
     """Linha do time do procedimento de atendimento — cada uma pública (visível ao
     solicitante) ou interna (restrita à equipe técnica), na ordem em que foi registrada."""
