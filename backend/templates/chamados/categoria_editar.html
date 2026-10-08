@@ -1,0 +1,70 @@
+{% extends 'base.html' %}
+{% block title %}Editar categoria{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-7">
+        <a href="{% url 'chamados:catalogo' %}" class="text-decoration-none small text-muted-hd"><i class="bi bi-arrow-left"></i> Voltar ao catálogo</a>
+        <h1 class="h3 mb-3 mt-1"><i class="bi bi-pencil-square"></i> {{ categoria.nome }}</h1>
+
+        <div class="hd-card mb-4">
+            <h2 class="h6 text-uppercase text-muted-hd mb-3">Dados da categoria</h2>
+            <form method="post">
+                {% csrf_token %}
+                <label class="form-label" for="{{ form.nome.id_for_label }}">{{ form.nome.label }}</label>
+                {{ form.nome }}
+                {% if form.nome.errors %}<div class="text-danger small">{{ form.nome.errors }}</div>{% endif %}
+                <button type="submit" class="btn btn-primary mt-3"><i class="bi bi-check-circle"></i> Salvar</button>
+            </form>
+        </div>
+
+        <div class="hd-card mb-4">
+            <h2 class="h6 text-uppercase text-muted-hd mb-3">Subcategorias</h2>
+            {% if subcategorias %}
+            <ul class="list-unstyled mb-3">
+                {% for sub in subcategorias %}
+                <li class="d-flex flex-wrap align-items-center gap-2 py-2{% if not forloop.last %} border-bottom{% endif %}">
+                    <span class="flex-grow-1">{{ sub.nome }}</span>
+                    <form method="post" action="{% url 'chamados:subcategoria_prioridade' sub.pk %}" class="m-0">
+                        {% csrf_token %}
+                        <select name="prioridade" class="form-select form-select-sm" style="width: auto;"
+                                aria-label="Prioridade de {{ sub.nome }}" onchange="this.form.submit()">
+                            {% for valor, rotulo in prioridade_choices %}
+                            <option value="{{ valor }}"{% if valor == sub.prioridade %} selected{% endif %}>{{ rotulo }}</option>
+                            {% endfor %}
+                        </select>
+                    </form>
+                    <form method="post" action="{% url 'chamados:subcategoria_excluir' sub.pk %}" class="m-0"
+                          onsubmit="return confirm('Excluir a subcategoria \'{{ sub.nome }}\'? Só é possível se não houver chamados vinculados.');">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-outline-danger btn-sm" title="Excluir subcategoria"><i class="bi bi-trash"></i></button>
+                    </form>
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p class="text-muted-hd small">Nenhuma subcategoria cadastrada ainda.</p>
+            {% endif %}
+
+            <form method="post" action="{% url 'chamados:subcategoria_adicionar' categoria.pk %}" class="border-top pt-3">
+                {% csrf_token %}
+                <div class="row g-2 align-items-end">
+                    <div class="col-sm-6">
+                        <label class="form-label" for="{{ subcategoria_form.nome.id_for_label }}">{{ subcategoria_form.nome.label }}</label>
+                        {{ subcategoria_form.nome }}
+                    </div>
+                    <div class="col-sm-3">
+                        <label class="form-label" for="{{ subcategoria_form.prioridade.id_for_label }}">{{ subcategoria_form.prioridade.label }}</label>
+                        {{ subcategoria_form.prioridade }}
+                    </div>
+                    <div class="col-sm-3">
+                        <button type="submit" class="btn btn-outline-primary w-100"><i class="bi bi-plus-circle"></i> Adicionar</button>
+                    </div>
+                </div>
+                {% for erro in subcategoria_form.nome.errors %}<div class="text-danger small mt-1">{{ erro }}</div>{% endfor %}
+                {% for erro in subcategoria_form.prioridade.errors %}<div class="text-danger small mt-1">{{ erro }}</div>{% endfor %}
+                <div class="form-text">A prioridade padrão define a prioridade (e o SLA) dos chamados abertos nessa subcategoria. Alterar a prioridade vale para os próximos chamados; os já abertos não mudam.</div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

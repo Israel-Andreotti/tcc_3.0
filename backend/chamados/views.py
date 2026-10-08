@@ -3,7 +3,7 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db import models, transaction
 from django.db.models import Case, F, IntegerField, ProtectedError, When
 from django.http import JsonResponse
-from django.shortcuts import get_object_or_404, redirect
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
 from django.views.generic import CreateView, DetailView, ListView, UpdateView, View
@@ -19,7 +19,7 @@ from .forms import (
     SLAPrioridadeForm,
     SubcategoriaForm,
 )
-from .models import Categoria, Chamado, ProcedimentoEntry, SLAPrioridade, Subcategoria
+from .models import Categoria, Chamado, Prioridade, ProcedimentoEntry, SLAPrioridade, Subcategoria
 
 # Ordem de urgência (mais urgente primeiro) e descrição curta de cada prioridade,
 # usadas na tela do catálogo de serviços.
@@ -524,46 +524,81 @@ class CategoriaCadastroView(AdministradorRequiredMixin, CreateView):
     model = Categoria
     form_class = CategoriaForm
     template_name = 'chamados/categoria_form.html'
-    success_url = reverse_lazy('chamados:catalogo')
+
+    def form_valid(self, form):
+        # A ordem não é mais editável na tela: categoria nova entra no fim do catálogo.
+        maior_ordem = Categoria.objects.aggregate(maior=models.Max('ordem'))['maior']
+        form.instance.ordem = 0 if maior_ordem is None else maior_ordem + 1
+        response = super().form_valid(form)
+        messages.success(self.request, f'Categoria "{self.object}" cadastrada. Agora adicione as subcategorias.')
+        return response
+
+    def get_success_url(self):
+        return reverse('chamados:categoria_editar', kwargs={'pk': self.object.pk})
+
+
+class CategoriaEditarView(AdministradorRequiredMixin, UpdateView):
+    """Edição de uma categoria do catálogo: nome e subcategorias (adicionar, excluir e trocar a
+    prioridade) — tudo concentrado aqui, fora da listagem do catálogo."""
+
+    model = Categoria
+    form_class = CategoriaForm
+    template_name = 'chamados/categoria_editar.html'
+    context_object_name = 'categoria'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['subcategorias'] = self.object.subcategorias.order_by('nome')
+        context['prioridade_choices'] = Prioridade.choices
+        context.setdefault('subcategoria_form', SubcategoriaForm(categoria=self.object))
+        return context
 
     def form_valid(self, form):
         response = super().form_valid(form)
-        messages.success(self.request, f'Categoria "{self.object}" cadastrada.')
+        messages.success(self.request, f'Categoria "{self.object}" atualizada.')
         return response
 
-
-class SubcategoriaCadastroView(AdministradorRequiredMixin, CreateView):
-    model = Subcategoria
-    form_class = SubcategoriaForm
-    template_name = 'chamados/subcategoria_form.html'
-    success_url = reverse_lazy('chamados:catalogo')
-
-    def get_initial(self):
-        initial = super().get_initial()
-        categoria_id = self.request.GET.get('categoria')
-        if categoria_id:
-            initial['categoria'] = categoria_id
-        return initial
-
-    def form_valid(self, form):
-        response = super().form_valid(form)
-        messages.success(self.request, f'Subcategoria "{self.object.nome}" cadastrada.')
-        return response
+    def get_success_url(self):
+        return reverse('chamados:categoria_editar', kwargs={'pk': self.object.pk})
 
 
-class CategoriaExcluirView(AdministradorRequiredMixin, View):
+class SubcategoriaAdicionarView(AdministradorRequiredMixin, View):
     def post(self, request, pk):
         categoria = get_object_or_404(Categoria, pk=pk)
-        nome = str(categoria)
-        try:
-            categoria.delete()
-            messages.success(request, f'Categoria "{nome}" excluída.')
-        except ProtectedError:
-            messages.error(
+        form = SubcategoriaForm(request.POST, categoria=categoria)
+        if form.is_valid():
+            subcategoria = form.save()
+            messages.success(request, f'Subcategoria "{subcategoria.nome}" adicionada.')
+            return redirect('chamados:categoria_editar', pk=pk)
+        # Volta para a tela de edição mostrando os erros e mantendo o que foi digitado.
+        return render(request, CategoriaEditarView.template_name, {
+            'categoria': categoria,
+            'object': categoria,
+            'form': CategoriaForm(instance=categoria),
+            'subcategorias': categoria.subcategorias.order_by('nome'),
+            'prioridade_choices': Prioridade.choices,
+            'subcategoria_form': form,
+        })
+
+
+class SubcategoriaPrioridadeView(AdministradorRequiredMixin, View):
+    """Troca a prioridade padrão de uma subcategoria. Vale para os chamados abertos a partir de
+    agora; os já abertos mantêm a prioridade e o SLA com que foram abertos."""
+
+    def post(self, request, pk):
+        subcategoria = get_object_or_404(Subcategoria, pk=pk)
+        prioridade = request.POST.get('prioridade', '')
+        if prioridade not in Prioridade.values:
+            messages.error(request, 'Prioridade inválida.')
+        elif prioridade != subcategoria.prioridade:
+            subcategoria.prioridade = prioridade
+            subcategoria.save(update_fields=['prioridade'])
+            messages.success(
                 request,
-                f'Não é possível excluir "{nome}": existem subcategorias ou chamados vinculados a ela.',
+                f'Prioridade de "{subcategoria.nome}" alterada para {subcategoria.get_prioridade_display()} '
+                '(vale para os próximos chamados).',
             )
-        return redirect('chamados:catalogo')
+        return redirect('chamados:categoria_editar', pk=subcategoria.categoria_id)
 
 
 class SubcategoriaExcluirView(AdministradorRequiredMixin, View):
@@ -578,4 +613,4 @@ class SubcategoriaExcluirView(AdministradorRequiredMixin, View):
                 request,
                 f'Não é possível excluir "{nome}": existem chamados vinculados a ela.',
             )
-        return redirect('chamados:catalogo')
+        return redirect('chamados:categoria_editar', pk=subcategoria.categoria_id)

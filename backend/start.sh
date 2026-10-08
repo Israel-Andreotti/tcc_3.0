@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Inicialização em produção (Koyeb): prepara arquivos estáticos e banco, garante o admin e sobe o servidor.
+# Inicialização em produção (Railway): prepara arquivos estáticos e banco, garante o admin e sobe o servidor.
 # As dependências já foram instaladas pela hospedagem a partir do requirements.txt.
 set -o errexit
 

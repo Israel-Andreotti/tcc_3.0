@@ -46,7 +46,7 @@ O sistema usa PostgreSQL em todos os ambientes.
 1. Crie o banco: `createdb tcc_chamados` (ou via `psql`/pgAdmin)
 2. No `.env`, ajuste as variáveis `DB_*` com as credenciais do seu PostgreSQL
 
-Em produção, a variável `DATABASE_URL` (connection string do Postgres hospedado, ex.: Neon) tem prioridade sobre as `DB_*`.
+Em produção, a variável `DATABASE_URL` (connection string do Postgres hospedado) tem prioridade sobre as `DB_*`.
 
 Depois, rode as migrations:
 
@@ -79,6 +79,33 @@ python manage.py runserver
 Acesse:
 - **http://127.0.0.1:8000/usuarios/login/** — login (redireciona conforme o perfil: técnico/administrador vão para a fila de chamados, solicitante vai direto para abrir um chamado)
 - **http://127.0.0.1:8000/admin/** — painel administrativo (gerenciar usuários, categorias, chamados)
+
+## Deploy (Railway)
+
+O sistema está publicado no [Railway](https://railway.com) (plano Hobby), em um projeto com dois serviços: **Postgres** e o repositório **tcc_3.0**. Todo push na branch `master` gera um deploy automático.
+
+Configuração do serviço `tcc_3.0` (Settings):
+
+| Campo | Valor |
+|---|---|
+| Root Directory | `/backend` |
+| Custom Start Command | `bash start.sh` |
+| Healthcheck Path | `/usuarios/login/` |
+| Public Networking | domínio gerado na porta `8080` |
+
+Variáveis de ambiente:
+
+| Variável | Valor |
+|---|---|
+| `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` (referência ao Postgres do projeto) |
+| `DEBUG` | `False` |
+| `ALLOWED_HOSTS` | `.up.railway.app,healthcheck.railway.app` |
+| `CSRF_TRUSTED_ORIGINS` | `https://*.up.railway.app` |
+| `PORT` | `8080` |
+| `SECRET_KEY` | valor aleatório (`python -c "import secrets; print(secrets.token_urlsafe(50))"`) |
+| `DJANGO_SUPERUSER_USERNAME` / `DJANGO_SUPERUSER_PASSWORD` / `DJANGO_SUPERUSER_EMAIL` | administrador inicial |
+
+A cada inicialização, `backend/start.sh` roda `collectstatic`, aplica as migrations, cria/atualiza o administrador (a senha é sincronizada com `DJANGO_SUPERUSER_PASSWORD`) e sobe o gunicorn na porta `$PORT`. O banco de produção é independente do banco local de desenvolvimento.
 
 ## Estrutura do projeto
 

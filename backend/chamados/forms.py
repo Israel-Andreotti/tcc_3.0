@@ -49,28 +49,35 @@ class ChamadoCreateForm(forms.ModelForm):
 class CategoriaForm(forms.ModelForm):
     class Meta:
         model = Categoria
-        fields = ['nome', 'ordem']
-        labels = {'nome': 'Nome da categoria', 'ordem': 'Ordem de exibição'}
+        fields = ['nome']
+        labels = {'nome': 'Nome da categoria'}
         widgets = {
             'nome': forms.TextInput(attrs={'class': 'form-control', 'autofocus': True}),
-            'ordem': forms.NumberInput(attrs={'class': 'form-control', 'min': 0}),
         }
 
 
 class SubcategoriaForm(forms.ModelForm):
+    """Adiciona uma subcategoria a uma categoria já definida (tela de edição da categoria)."""
+
     class Meta:
         model = Subcategoria
-        fields = ['categoria', 'nome', 'prioridade']
-        labels = {'categoria': 'Categoria', 'nome': 'Nome da subcategoria', 'prioridade': 'Prioridade padrão'}
+        fields = ['nome', 'prioridade']
+        labels = {'nome': 'Nome da subcategoria', 'prioridade': 'Prioridade padrão'}
         widgets = {
-            'categoria': forms.Select(attrs={'class': 'form-select'}),
-            'nome': forms.TextInput(attrs={'class': 'form-control', 'autofocus': True}),
+            'nome': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Ex.: Impressora'}),
             'prioridade': forms.Select(attrs={'class': 'form-select'}),
         }
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, categoria, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields['categoria'].empty_label = 'Selecione uma categoria'
+        self.instance.categoria = categoria
+
+    def clean_nome(self):
+        # unique_together (categoria, nome) não é validado pelo form porque `categoria` não é campo dele.
+        nome = self.cleaned_data['nome'].strip()
+        if Subcategoria.objects.filter(categoria=self.instance.categoria, nome__iexact=nome).exists():
+            raise forms.ValidationError(f'Já existe a subcategoria "{nome}" nesta categoria.')
+        return nome
 
 
 class SLAPrioridadeForm(forms.ModelForm):

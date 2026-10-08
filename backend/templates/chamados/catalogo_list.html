@@ -39,14 +39,15 @@
 
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
     <h2 class="h5 m-0">Categorias e subcategorias</h2>
-    <div class="d-flex flex-wrap gap-2">
-        <div class="hd-search" style="flex: 1 1 320px; min-width: min(300px, 100%); max-width: 360px;">
+    {# flex-md-nowrap: num container que quebra linha, o navegador dimensiona o grupo pelo maior item #}
+    {# (só a busca) e o botão sempre caía para a linha de baixo. Sem quebra, a largura é a soma dos itens. #}
+    <div class="d-flex flex-wrap flex-md-nowrap align-items-center gap-2">
+        <div class="hd-search" style="flex: 0 1 320px; min-width: min(260px, 100%);">
             <i class="bi bi-search hd-search-icon"></i>
             <input type="text" id="catalogoSearch" class="form-control" placeholder="Buscar um serviço pelo nome...">
         </div>
         {% if user.perfil == 'administrador' %}
-        <a href="{% url 'chamados:categoria_cadastrar' %}" class="btn btn-outline-primary"><i class="bi bi-plus-circle"></i> Categoria</a>
-        <a href="{% url 'chamados:subcategoria_cadastrar' %}" class="btn btn-outline-primary"><i class="bi bi-plus-circle"></i> Subcategoria</a>
+        <a href="{% url 'chamados:categoria_cadastrar' %}" class="btn btn-outline-primary text-nowrap"><i class="bi bi-plus-circle"></i> Categoria</a>
         {% endif %}
     </div>
 </div>
@@ -57,14 +58,7 @@
         <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2 hd-catalogo-categoria-header">
             <h3 class="h6 m-0">{{ categoria.nome }}</h3>
             {% if user.perfil == 'administrador' %}
-            <div class="d-flex gap-1">
-                <a href="{% url 'chamados:subcategoria_cadastrar' %}?categoria={{ categoria.pk }}" class="btn btn-outline-primary btn-sm" title="Adicionar subcategoria"><i class="bi bi-plus-lg"></i></a>
-                <form method="post" action="{% url 'chamados:categoria_excluir' categoria.pk %}" class="m-0"
-                      onsubmit="return confirm('Excluir a categoria \'{{ categoria.nome }}\'? Só é possível se não houver subcategorias ou chamados vinculados.');">
-                    {% csrf_token %}
-                    <button type="submit" class="btn btn-outline-danger btn-sm" title="Excluir categoria"><i class="bi bi-trash"></i></button>
-                </form>
-            </div>
+            <a href="{% url 'chamados:categoria_editar' categoria.pk %}" class="btn btn-outline-primary btn-sm" title="Editar categoria e subcategorias"><i class="bi bi-pencil"></i> Editar</a>
             {% endif %}
         </div>
         {% if categoria.subcategorias.all %}
@@ -73,13 +67,6 @@
             <li class="d-flex flex-wrap align-items-center gap-2 py-1 hd-catalogo-subcategoria{% if not forloop.last %} border-bottom{% endif %}" data-nome-sub="{{ sub.nome|lower }}">
                 <span class="flex-grow-1">{{ sub.nome }}</span>
                 <span class="badge rounded-pill {{ sub.prioridade|prioridade_badge }}">{{ sub.get_prioridade_display }}</span>
-                {% if user.perfil == 'administrador' %}
-                <form method="post" action="{% url 'chamados:subcategoria_excluir' sub.pk %}" class="m-0"
-                      onsubmit="return confirm('Excluir \'{{ sub.nome }}\'? Só é possível se não houver chamados vinculados.');">
-                    {% csrf_token %}
-                    <button type="submit" class="btn btn-outline-danger btn-sm" title="Excluir"><i class="bi bi-trash"></i></button>
-                </form>
-                {% endif %}
             </li>
             {% endfor %}
         </ul>

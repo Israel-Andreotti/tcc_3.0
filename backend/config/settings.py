@@ -28,7 +28,7 @@ DEBUG = config('DEBUG', default=True, cast=bool)
 
 ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1', cast=Csv())
 
-# Em produção, informe o domínio público com https (ex.: https://*.koyeb.app).
+# Em produção, informe o domínio público com https (ex.: https://*.up.railway.app).
 CSRF_TRUSTED_ORIGINS = config('CSRF_TRUSTED_ORIGINS', default='', cast=Csv())
 
 if not DEBUG:
@@ -92,11 +92,11 @@ WSGI_APPLICATION = 'config.wsgi.application'
 
 DATABASE_URL = config('DATABASE_URL', default=None)
 if DATABASE_URL:
-    # Usado em produção: connection string do Postgres hospedado (ex.: Neon, com ?sslmode=require).
+    # Usado em produção: connection string do Postgres hospedado (no Railway, vem do serviço Postgres).
     import dj_database_url
 
     DATABASES = {
-        # conn_health_checks: bancos serverless (Neon) fecham conexões ociosas; testa antes de reusar.
+        # conn_health_checks: testa a conexão persistente antes de reusar (o banco pode tê-la fechado).
         'default': dj_database_url.parse(DATABASE_URL, conn_max_age=600, conn_health_checks=True)
     }
 else:

@@ -81,7 +81,7 @@ class Chamado(models.Model):
     titulo = models.CharField(max_length=150)
     descricao = models.TextField()
     status = models.CharField(max_length=25, choices=Status.choices, default=Status.ABERTO)
-    # Nunca definida por formulário de usuário: sempre espelha a prioridade da subcategoria (ver save()).
+    # Nunca definida por formulário de usuário: copiada da subcategoria na abertura (ver save()).
     prioridade = models.CharField(max_length=10, choices=Prioridade.choices, default=Prioridade.MEDIA)
 
     categoria = models.ForeignKey(
@@ -145,7 +145,9 @@ class Chamado(models.Model):
         return f'#{self.pk} {self.titulo}'
 
     def save(self, *args, **kwargs):
-        if self.subcategoria_id:
+        # Só na abertura: a prioridade da subcategoria pode mudar depois (catálogo), e o chamado
+        # já aberto mantém a prioridade com que foi aberto — coerente com o prazo de SLA já calculado.
+        if self._state.adding and self.subcategoria_id:
             self.prioridade = self.subcategoria.prioridade
         if not self.prazo_sla:
             self.prazo_sla = timezone.now() + timedelta(hours=self.sla_horas_configurado())
