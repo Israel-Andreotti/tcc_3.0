@@ -130,7 +130,7 @@
                 <td class="text-nowrap text-center" style="min-width: 130px;">
                     {% if chamado.sla_estourado %}<i class="bi bi-clock-fill text-danger me-1" title="SLA estourado"></i>{% endif %}{{ chamado.criado_em|date:'d M, H:i' }}
                 </td>
-                <td class="pe-3 text-center" style="min-width: 110px;">
+                <td class="pe-3 text-center" style="min-width: 150px;">
                     {% if chamado.sla_concluido %}
                     <span class="small text-muted-hd">Concluído</span>
                     {% else %}
@@ -139,6 +139,16 @@
                     </div>
                     <div class="sla-bar-track">
                         <div class="sla-bar-fill sla-{{ chamado.sla_cor }}" style="width: {{ chamado.sla_percentual }}%"></div>
+                    </div>
+                    {# Quando o SLA estoura. Pausado não tem horário fixo: o prazo é estendido pelo tempo parado. #}
+                    <div class="small mt-1 text-nowrap">
+                        {% if chamado.sla_pausado %}
+                        <span class="text-muted-hd">{{ chamado.sla_tempo_restante_display }}</span>
+                        {% elif chamado.sla_estourado %}
+                        <span class="text-danger" title="{{ chamado.sla_tempo_restante_display }}">Estourou {{ chamado.prazo_sla|date:'d M, H:i' }}</span>
+                        {% else %}
+                        <span class="text-muted-hd" title="{{ chamado.sla_tempo_restante_display }}">Vence {{ chamado.prazo_sla|date:'d M, H:i' }}</span>
+                        {% endif %}
                     </div>
                     {% endif %}
                 </td>

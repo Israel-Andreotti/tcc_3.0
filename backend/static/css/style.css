@@ -144,6 +144,12 @@ body {
     color: var(--hd-primary);
 }
 
+/* O Edge mostra um olho próprio nos campos de senha; esconde para ficar só o botão do sistema. */
+input[type="password"]::-ms-reveal,
+input[type="password"]::-ms-clear {
+    display: none;
+}
+
 /* Barra de busca com lupa embutida no campo */
 .hd-search {
     position: relative;
