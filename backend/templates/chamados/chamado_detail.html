@@ -45,10 +45,18 @@
 </div>
 {% endif %}
 
-{% if pode_gerenciar and chamado.encerrado %}
+{% if chamado.status == 'resolvido' and pode_gerenciar %}
+<div class="alert alert-info d-flex align-items-center gap-2">
+    <i class="bi bi-hourglass-split"></i>
+    <span>
+        Resolvido em {{ chamado.resolvido_em|date:'d/m/Y H:i' }} — <strong>aguardando a confirmação do solicitante</strong>.
+        Se ele não responder, o chamado fecha automaticamente em {{ chamado.prazo_confirmacao|date:'d/m/Y H:i' }}.
+    </span>
+</div>
+{% elif chamado.status == 'fechado' %}
 <div class="alert alert-secondary d-flex align-items-center gap-2">
     <i class="bi bi-lock-fill"></i>
-    <span>Chamado encerrado{% if chamado.fechado_em %} em {{ chamado.fechado_em|date:'d/m/Y H:i' }}{% endif %} — somente leitura.</span>
+    <span>Chamado fechado{% if chamado.fechado_em %} em {{ chamado.fechado_em|date:'d/m/Y H:i' }}{% endif %}{% if pode_gerenciar %} — somente leitura{% endif %}.</span>
 </div>
 {% endif %}
 
@@ -63,7 +71,7 @@
                         {{ chamado.solicitante }}
                         {% if chamado.solicitante.vip %}<span class="badge rounded-pill badge-vip" title="Solicitante VIP — SLA reduzido"><i class="bi bi-star-fill"></i> VIP</span>{% endif %}
                     </div>
-                    <div class="small text-muted-hd mt-1"><i class="bi bi-diagram-3"></i> {{ chamado.setor|default:'Setor não informado' }}</div>
+                    <div class="small text-muted-hd mt-1"><i class="bi bi-diagram-3"></i> {{ chamado.setor|default:'Setor não informado' }}{% if chamado.setor.critico %} <span class="badge rounded-pill prioridade-critica" title="Chamados deste setor sobem um nível de prioridade"><i class="bi bi-exclamation-triangle-fill"></i> Setor crítico</span>{% endif %}</div>
                     {% if chamado.solicitante.email %}<div class="small text-muted-hd mt-1"><i class="bi bi-envelope"></i> {{ chamado.solicitante.email }}</div>{% endif %}
                     {% if chamado.solicitante.telefone %}<div class="small text-muted-hd mt-1"><i class="bi bi-telephone"></i> {{ chamado.solicitante.telefone }}</div>{% endif %}
                 </div>
@@ -87,8 +95,9 @@
                     <span class="text-muted-hd">{{ chamado.prazo_sla|date:'d/m/Y H:i' }} &middot; encerrado</span>
                     {% else %}
                     <div class="d-flex justify-content-between small mb-1">
-                        <span class="sla-tempo sla-{{ chamado.sla_cor }} fw-semibold">{{ chamado.sla_tempo_restante_display }}</span>
-                        <span class="text-muted-hd">{{ chamado.prazo_sla|date:'d/m/Y H:i' }}</span>
+                        <span class="sla-tempo sla-{{ chamado.sla_cor }} fw-semibold">{% if chamado.sla_pausado %}<i class="bi bi-pause-fill"></i> {% endif %}{{ chamado.sla_tempo_restante_display }}</span>
+                        {# Pausado não tem prazo fixo: ele é estendido pelo tempo parado ao retomar. #}
+                        {% if not chamado.sla_pausado %}<span class="text-muted-hd">{{ chamado.prazo_sla|date:'d/m/Y H:i' }}</span>{% endif %}
                     </div>
                     <div class="sla-bar-track">
                         <div class="sla-bar-fill sla-{{ chamado.sla_cor }}" style="width: {{ chamado.sla_percentual }}%"></div>
@@ -120,6 +129,33 @@
         <button type="submit" class="btn btn-primary"><i class="bi bi-send"></i> Enviar resposta</button>
         <div class="form-text mt-2">Ao responder, o chamado volta para atendimento.</div>
     </form>
+</div>
+{% endif %}
+
+{% if pode_confirmar %}
+<div class="hd-card mb-4 border border-2 border-success">
+    <h2 class="h6 text-uppercase text-success mb-2"><i class="bi bi-patch-check-fill"></i> O técnico marcou este chamado como resolvido</h2>
+    <p class="mb-3">O seu problema foi resolvido? Se você não responder até <strong>{{ chamado.prazo_confirmacao|date:'d/m/Y H:i' }}</strong>, o chamado será fechado automaticamente.</p>
+    <div class="d-flex flex-wrap gap-2">
+        <form method="post" action="{% url 'chamados:confirmar_solucao' chamado.pk %}" class="m-0">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-success"><i class="bi bi-check-circle-fill"></i> Sim, foi resolvido</button>
+        </form>
+        <button type="button" class="btn btn-outline-danger" data-bs-toggle="collapse" data-bs-target="#reabrirChamado"
+                aria-expanded="false" aria-controls="reabrirChamado">
+            <i class="bi bi-arrow-counterclockwise"></i> Não foi resolvido
+        </button>
+    </div>
+    <div class="collapse mt-3" id="reabrirChamado">
+        <form method="post" action="{% url 'chamados:reabrir' chamado.pk %}">
+            {% csrf_token %}
+            <label class="form-label" for="reabrirTexto">O que ainda não foi resolvido?</label>
+            <textarea name="texto" id="reabrirTexto" class="form-control mb-2" rows="3" required
+                      placeholder="Descreva o que continua acontecendo..."></textarea>
+            <button type="submit" class="btn btn-danger"><i class="bi bi-arrow-counterclockwise"></i> Reabrir chamado</button>
+            <div class="form-text mt-2">O chamado volta para o técnico continuar o atendimento.</div>
+        </form>
+    </div>
 </div>
 {% endif %}
 
@@ -296,8 +332,8 @@
                 </div>
                 <div class="modal-body">
                     <label class="form-label" for="reatribuirAtendente">Novo técnico responsável</label>
-                    <select name="atendente" id="reatribuirAtendente" class="form-select" required>
-                        <option value="">Selecione um técnico</option>
+                    <select name="atendente" id="reatribuirAtendente" class="form-select hd-select-placeholder" required>
+                        <option value="" disabled hidden{% if not chamado.atendente_id %} selected{% endif %}>Selecione um técnico</option>
                         {% for tecnico in tecnicos %}
                         <option value="{{ tecnico.pk }}" {% if chamado.atendente_id == tecnico.pk %}selected{% endif %}>{{ tecnico.get_full_name|default:tecnico.username }}</option>
                         {% endfor %}

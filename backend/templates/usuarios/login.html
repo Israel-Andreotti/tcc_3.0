@@ -23,6 +23,33 @@
                 <button type="submit" class="btn btn-primary w-100">Entrar</button>
             </form>
         </div>
+
+        {% if usuarios_login_rapido %}
+        {# Só aparece com LOGIN_RAPIDO=True no .env local (e DEBUG=True). #}
+        <div class="hd-card mt-3 border border-warning">
+            <h2 class="h6 mb-1"><i class="bi bi-lightning-charge-fill text-warning"></i> Entrar como (ambiente de testes)</h2>
+            <p class="small text-muted-hd mb-3">Login sem senha, ativo só localmente.</p>
+            {% regroup usuarios_login_rapido by get_perfil_display as grupos %}
+            {% for grupo in grupos %}
+            <div class="small text-uppercase text-muted-hd fw-semibold mt-2 mb-1">{{ grupo.grouper }}</div>
+            <div class="list-group mb-2">
+                {% for u in grupo.list %}
+                <form method="post" action="{% url 'usuarios:login_rapido' u.pk %}" class="m-0">
+                    {% csrf_token %}
+                    <button type="submit" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center gap-2 py-2">
+                        <span>
+                            {{ u.get_full_name|default:u.username }}
+                            {% if u.vip %}<span class="badge rounded-pill badge-vip"><i class="bi bi-star-fill"></i> VIP</span>{% endif %}
+                            <span class="d-block small text-muted-hd">{{ u.username }}{% if u.setor %} · {{ u.setor }}{% endif %}</span>
+                        </span>
+                        <i class="bi bi-box-arrow-in-right"></i>
+                    </button>
+                </form>
+                {% endfor %}
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
     </div>
 </div>
 {% endblock %}

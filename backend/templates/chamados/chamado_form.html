@@ -40,8 +40,10 @@
                 subcategoriaSelect.appendChild(opcao);
             }
         });
-        if (subcategoriaSelect.querySelector('option[value="' + valorAtual + '"]')) {
+        if (valorAtual && subcategoriaSelect.querySelector('option[value="' + valorAtual + '"]')) {
             subcategoriaSelect.value = valorAtual;
+        } else {
+            subcategoriaSelect.value = '';  // volta para o placeholder "Selecione uma subcategoria"
         }
     }
 

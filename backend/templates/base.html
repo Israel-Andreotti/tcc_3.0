@@ -26,7 +26,7 @@
                 <div class="d-flex flex-column flex-lg-row align-items-lg-center gap-lg-4 mt-3 mt-lg-0 mx-lg-auto px-lg-4">
                     {% if user.perfil == 'solicitante' %}
                     {% chamados_aguardando_resposta user as qtd_aguardando %}
-                    <a class="nav-link text-light{% if request.path == '/chamados/' %} active{% endif %}" href="{% url 'chamados:list' %}"><i class="bi bi-ticket-detailed"></i> Meus chamados{% if qtd_aguardando %} <span class="badge rounded-pill bg-warning text-dark" title="{{ qtd_aguardando }} chamado{{ qtd_aguardando|pluralize }} aguardando sua resposta">{{ qtd_aguardando }}</span>{% endif %}</a>
+                    <a class="nav-link text-light{% if request.path == '/chamados/' %} active{% endif %}" href="{% url 'chamados:list' %}"><i class="bi bi-ticket-detailed"></i> Meus chamados{% if qtd_aguardando %} <span class="badge rounded-pill bg-warning text-dark" title="{{ qtd_aguardando }} chamado{{ qtd_aguardando|pluralize }} precisando de uma ação sua">{{ qtd_aguardando }}</span>{% endif %}</a>
                     <a class="nav-link text-light{% if '/chamados/novo/' in request.path %} active{% endif %}" href="{% url 'chamados:create' %}"><i class="bi bi-plus-circle"></i> Abrir chamado</a>
                     {% else %}
                     {% respostas_nao_vistas user as qtd_respostas %}

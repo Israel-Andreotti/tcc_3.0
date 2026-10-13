@@ -26,6 +26,10 @@ SECRET_KEY = config('SECRET_KEY', default='django-insecure-tqi34pummn35_i!*bk=i5
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = config('DEBUG', default=True, cast=bool)
 
+# Só para testes locais: a tela de login mostra "Entrar como..." (um clique, sem senha) e a troca de
+# senha obrigatória é ignorada. Exige DEBUG=True — em produção (DEBUG=False) nunca fica ativo.
+LOGIN_RAPIDO = DEBUG and config('LOGIN_RAPIDO', default=False, cast=bool)
+
 ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1', cast=Csv())
 
 # Em produção, informe o domínio público com https (ex.: https://*.up.railway.app).

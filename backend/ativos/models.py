@@ -16,7 +16,6 @@ class Ativo(models.Model):
         EM_USO = 'em_uso', 'Em uso'
         DISPONIVEL = 'disponivel', 'Disponível'
         DANIFICADO = 'danificado', 'Danificado'
-        TRIAGEM = 'triagem', 'Triagem'
 
     marca = models.CharField(max_length=100)
     modelo = models.CharField(max_length=100)

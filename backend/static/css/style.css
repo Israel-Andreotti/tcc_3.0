@@ -144,6 +144,16 @@ body {
     color: var(--hd-primary);
 }
 
+/* Select com placeholder: cinza enquanto a opção vazia ("Selecione...") está escolhida.
+   O select é obrigatório, então fica :invalid até o usuário escolher algo. */
+.hd-select-placeholder:invalid {
+    color: var(--hd-text-muted);
+}
+
+.hd-select-placeholder option {
+    color: var(--hd-text);
+}
+
 /* O Edge mostra um olho próprio nos campos de senha; esconde para ficar só o botão do sistema. */
 input[type="password"]::-ms-reveal,
 input[type="password"]::-ms-clear {

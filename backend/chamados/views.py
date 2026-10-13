@@ -1,7 +1,11 @@
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db import models, transaction
-from django.db.models import Case, F, IntegerField, ProtectedError, When
+from django.db.models import (
+    Case, DateTimeField, DurationField, ExpressionWrapper, F, FloatField, Func, IntegerField, ProtectedError,
+    Value, When,
+)
+from django.db.models.functions import Coalesce, NullIf
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse, reverse_lazy
@@ -51,11 +55,29 @@ ORDEM_URGENCIA = ('sla_pausado_ordem', F('prazo_sla').asc(nulls_last=True), 'cri
 # Opções do seletor "Ordenar por" da fila: chave -> (rótulo, ordenação).
 ORDENACOES_CHAMADO = {
     'urgencia': ('Urgência do SLA', ORDEM_URGENCIA),
+    'consumido': ('Prazo SLA (% consumido)', (F('sla_consumido').desc(nulls_last=True),) + ORDEM_URGENCIA),
     'categoria': ('Categoria', ('categoria__nome', 'subcategoria__nome') + ORDEM_URGENCIA),
     'prioridade': ('Prioridade', ('prioridade_ordem',) + ORDEM_URGENCIA),
     'recentes': ('Mais recentes', ('-criado_em',)),
     'antigos': ('Mais antigos', ('criado_em',)),
 }
+
+
+class Segundos(Func):
+    """Duração (interval do PostgreSQL) em segundos."""
+
+    template = 'EXTRACT(EPOCH FROM %(expressions)s)'
+    output_field = FloatField()
+
+
+def anotacao_sla_consumido():
+    """Fração do SLA já consumida (1.0 = 100%), calculada no banco com a mesma regra de
+    Chamado.sla_percentual: descontando as pausas e congelada enquanto o chamado está pausado."""
+    referencia = Coalesce('sla_pausado_em', Value(timezone.now(), output_field=DateTimeField()))
+    decorrido = Segundos(ExpressionWrapper(referencia - F('criado_em'), output_field=DurationField()))
+    total = Segundos(ExpressionWrapper(F('prazo_sla') - F('criado_em'), output_field=DurationField()))
+    pausado = Segundos(F('sla_tempo_pausado'))
+    return ExpressionWrapper((decorrido - pausado) / NullIf(total - pausado, 0), output_field=FloatField())
 
 
 class ChamadoListView(LoginRequiredMixin, ListView):
@@ -64,14 +86,25 @@ class ChamadoListView(LoginRequiredMixin, ListView):
     context_object_name = 'chamados'
     paginate_by = 20
 
+    CHAVE_SESSAO_ORDEM = 'fila_chamados_ordem'
+
     def get_ordem(self):
-        """Ordenação escolhida; o padrão é urgência para a equipe e mais recentes para o solicitante."""
+        """Ordenação da fila. A escolhida pelo usuário fica guardada na sessão, para continuar valendo
+        ao recarregar a página ou voltar para a fila (até o logout). Sem escolha, o padrão é urgência
+        para a equipe e mais recentes para o solicitante."""
+        sessao = self.request.session
         ordem = self.request.GET.get('ordem', '')
+        if ordem in ORDENACOES_CHAMADO:
+            if sessao.get(self.CHAVE_SESSAO_ORDEM) != ordem:
+                sessao[self.CHAVE_SESSAO_ORDEM] = ordem
+            return ordem
+        ordem = sessao.get(self.CHAVE_SESSAO_ORDEM, '')
         if ordem in ORDENACOES_CHAMADO:
             return ordem
         return 'recentes' if self.request.user.is_solicitante() else 'urgencia'
 
     def get_queryset(self):
+        Chamado.fechar_resolvidos_expirados()
         usuario = self.request.user
         qs = Chamado.objects.select_related(
             'solicitante', 'solicitante__setor', 'atendente', 'atendente__setor', 'categoria', 'subcategoria', 'setor'
@@ -89,6 +122,7 @@ class ChamadoListView(LoginRequiredMixin, ListView):
                 default=99,
                 output_field=IntegerField(),
             ),
+            sla_consumido=anotacao_sla_consumido(),
         ).order_by(*ORDENACOES_CHAMADO[self.get_ordem()][1])
 
         termo = self.request.GET.get('q', '').strip()
@@ -130,10 +164,11 @@ class ChamadoListView(LoginRequiredMixin, ListView):
         context['filtros_querystring'] = parametros.urlencode()
         if usuario.is_solicitante():
             # Independe de filtro/paginação: alimenta o pop-up e o aviso de "precisa da sua resposta".
-            context['aguardando_resposta'] = list(
-                Chamado.objects.filter(solicitante=usuario, status=Chamado.Status.AGUARDANDO_SOLICITANTE)
-                .select_related('subcategoria')
-                .order_by('sla_pausado_em')
+            context['pendencias_solicitante'] = list(
+                Chamado.objects.filter(
+                    solicitante=usuario,
+                    status__in=[Chamado.Status.AGUARDANDO_SOLICITANTE, Chamado.Status.RESOLVIDO],
+                ).order_by('sla_pausado_em')
             )
         if not usuario.is_solicitante():
             context['atendente_selecionado'] = self.request.GET.get('atendente', '')
@@ -150,6 +185,7 @@ class ChamadoHistoricoView(AtendenteRequiredMixin, ListView):
     paginate_by = 20
 
     def get_queryset(self):
+        Chamado.fechar_resolvidos_expirados()
         qs = Chamado.objects.select_related(
             'solicitante', 'solicitante__setor', 'atendente', 'atendente__setor', 'categoria', 'subcategoria'
         ).filter(
@@ -176,6 +212,7 @@ class ChamadoDetailView(LoginRequiredMixin, DetailView):
     context_object_name = 'chamado'
 
     def get_queryset(self):
+        Chamado.fechar_resolvidos_expirados()
         usuario = self.request.user
         qs = Chamado.objects.select_related('solicitante', 'atendente', 'categoria', 'subcategoria')
         if usuario.is_solicitante():
@@ -214,6 +251,7 @@ class ChamadoDetailView(LoginRequiredMixin, DetailView):
                 tipo=ProcedimentoEntry.Tipo.INTERNO
             ).select_related('autor')
             context['pode_responder'] = self.object.status == Chamado.Status.AGUARDANDO_SOLICITANTE
+            context['pode_confirmar'] = self.object.status == Chamado.Status.RESOLVIDO
             if context['pode_responder']:
                 # Última orientação pública da equipe: é o que o solicitante precisa responder.
                 context['pedido_tecnico'] = self.object.procedimentos.filter(
@@ -273,9 +311,7 @@ class ChamadoConcluirView(AtendenteRequiredMixin, ChamadoEditavelMixin, View):
     @transaction.atomic
     def post(self, request, pk):
         chamado = get_object_or_404(Chamado, pk=pk)
-        chamado.retomar_sla()  # se estava aguardando o solicitante, contabiliza a pausa até agora
-        chamado.status = Chamado.Status.RESOLVIDO
-        chamado.fechado_em = timezone.now()
+        chamado.resolver()
         chamado.save()
 
         pendentes = chamado.movimentacoes_ativo.filter(status=MovimentacaoAtivo.Status.PENDENTE).select_related('ativo')
@@ -284,10 +320,13 @@ class ChamadoConcluirView(AtendenteRequiredMixin, ChamadoEditavelMixin, View):
             movimentacao.efetivar()
             efetivadas += 1
 
+        aviso = (
+            f'Chamado resolvido. Aguardando a confirmação do solicitante '
+            f'(fecha automaticamente em {Chamado.DIAS_CONFIRMACAO} dias).'
+        )
         if efetivadas:
-            messages.success(request, f'Chamado concluído. {efetivadas} movimentação(ões) de ativo efetivada(s).')
-        else:
-            messages.success(request, 'Chamado concluído.')
+            aviso += f' {efetivadas} movimentação(ões) de ativo efetivada(s).'
+        messages.success(request, aviso)
         return redirect('chamados:detail', pk=pk)
 
 
@@ -307,6 +346,49 @@ class ChamadoReatribuirView(AtendenteRequiredMixin, ChamadoEditavelMixin, View):
             chamado.status = Chamado.Status.EM_ANDAMENTO
         chamado.save()
         messages.success(request, f'Chamado reatribuído para {tecnico}.')
+        return redirect('chamados:detail', pk=pk)
+
+
+class ChamadoConfirmarSolucaoView(LoginRequiredMixin, View):
+    """Solicitante confirma que o problema foi resolvido: o chamado é fechado em definitivo."""
+
+    @transaction.atomic
+    def post(self, request, pk):
+        chamado = get_object_or_404(Chamado, pk=pk, solicitante=request.user)
+        if chamado.status != Chamado.Status.RESOLVIDO:
+            messages.info(request, 'Este chamado não está aguardando a sua confirmação.')
+            return redirect('chamados:detail', pk=pk)
+        ProcedimentoEntry.objects.create(
+            chamado=chamado, autor=request.user, tipo=ProcedimentoEntry.Tipo.RESPOSTA,
+            texto='Confirmou que o problema foi resolvido.',
+        )
+        chamado.fechar()
+        chamado.save()
+        messages.success(request, 'Obrigado! O chamado foi fechado.')
+        return redirect('chamados:detail', pk=pk)
+
+
+class ChamadoReabrirView(LoginRequiredMixin, View):
+    """Solicitante informa que o problema não foi resolvido: o chamado volta para o técnico
+    (em andamento), o SLA é retomado e o técnico recebe o aviso de nova resposta."""
+
+    @transaction.atomic
+    def post(self, request, pk):
+        chamado = get_object_or_404(Chamado, pk=pk, solicitante=request.user)
+        if chamado.status != Chamado.Status.RESOLVIDO:
+            messages.info(request, 'Este chamado não pode mais ser reaberto.')
+            return redirect('chamados:detail', pk=pk)
+        motivo = request.POST.get('texto', '').strip()
+        if not motivo:
+            messages.error(request, 'Conte o que ainda não foi resolvido antes de reabrir.')
+            return redirect('chamados:detail', pk=pk)
+        ProcedimentoEntry.objects.create(
+            chamado=chamado, autor=request.user, tipo=ProcedimentoEntry.Tipo.RESPOSTA,
+            texto=f'Não foi resolvido: {motivo}',
+        )
+        chamado.reabrir()
+        chamado.save()
+        messages.success(request, 'Chamado reaberto. O técnico vai continuar o atendimento.')
         return redirect('chamados:detail', pk=pk)
 
 

@@ -15,7 +15,8 @@ class ForcarTrocaSenhaMiddleware:
     def __call__(self, request):
         usuario = getattr(request, 'user', None)
         if (
-            usuario
+            not settings.LOGIN_RAPIDO  # testes locais: não obriga a trocar a senha
+            and usuario
             and usuario.is_authenticated
             and getattr(usuario, 'deve_trocar_senha', False)
             and not request.path.startswith(settings.STATIC_URL)

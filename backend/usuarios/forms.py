@@ -72,8 +72,9 @@ class UsuarioEditarForm(UsuarioCadastroForm):
 class SetorForm(forms.ModelForm):
     class Meta:
         model = Setor
-        fields = ['nome']
+        fields = ['nome', 'critico']
         labels = {'nome': 'Nome do setor'}
         widgets = {
             'nome': forms.TextInput(attrs={'class': 'form-control', 'autofocus': True}),
+            'critico': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
         }

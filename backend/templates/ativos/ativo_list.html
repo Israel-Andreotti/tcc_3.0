@@ -53,8 +53,6 @@
                     <span class="badge rounded-pill status-resolvido">{{ ativo.get_status_display }}</span>
                     {% elif ativo.status == 'em_uso' %}
                     <span class="badge rounded-pill status-aberto">{{ ativo.get_status_display }}</span>
-                    {% elif ativo.status == 'triagem' %}
-                    <span class="badge rounded-pill status-andamento">{{ ativo.get_status_display }}</span>
                     {% else %}
                     <span class="badge rounded-pill status-fechado bg-danger text-white">{{ ativo.get_status_display }}</span>
                     {% endif %}

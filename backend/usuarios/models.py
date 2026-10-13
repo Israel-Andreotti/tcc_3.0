@@ -4,6 +4,11 @@ from django.db import models
 
 class Setor(models.Model):
     nome = models.CharField(max_length=100, unique=True)
+    critico = models.BooleanField(
+        default=False,
+        verbose_name='Setor crítico',
+        help_text='Chamados abertos neste setor sobem um nível de prioridade (ex.: UTI, Emergência, Centro Cirúrgico).',
+    )
 
     class Meta:
         ordering = ['nome']

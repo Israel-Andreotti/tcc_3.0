@@ -6,6 +6,7 @@ app_name = 'usuarios'
 
 urlpatterns = [
     path('login/', views.LoginView.as_view(), name='login'),
+    path('login/rapido/<int:pk>/', views.LoginRapidoView.as_view(), name='login_rapido'),
     path('logout/', views.LogoutView.as_view(), name='logout'),
     path('cadastrar/', views.UsuarioCadastroView.as_view(), name='cadastrar'),
     path('trocar-senha/', views.TrocarSenhaView.as_view(), name='trocar_senha'),
@@ -15,4 +16,5 @@ urlpatterns = [
     path('<int:pk>/resetar-senha/', views.UsuarioResetarSenhaView.as_view(), name='resetar_senha'),
     path('setores/', views.SetorListView.as_view(), name='setores'),
     path('setores/cadastrar/', views.SetorCadastroView.as_view(), name='setor_cadastrar'),
+    path('setores/<int:pk>/critico/', views.SetorCriticoView.as_view(), name='setor_critico'),
 ]

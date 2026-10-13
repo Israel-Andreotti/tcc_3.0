@@ -30,12 +30,16 @@ def prioridade_badge(prioridade):
 
 @register.simple_tag
 def chamados_aguardando_resposta(usuario):
-    """Quantos chamados do solicitante estão parados esperando uma resposta dele (badge do menu)."""
+    """Quantos chamados do solicitante precisam de uma ação dele (badge do menu): responder um
+    chamado pausado ou confirmar/reabrir um chamado resolvido."""
     from chamados.models import Chamado
 
     if not getattr(usuario, 'is_authenticated', False) or not usuario.is_solicitante():
         return 0
-    return Chamado.objects.filter(solicitante=usuario, status=Chamado.Status.AGUARDANDO_SOLICITANTE).count()
+    return Chamado.objects.filter(
+        solicitante=usuario,
+        status__in=[Chamado.Status.AGUARDANDO_SOLICITANTE, Chamado.Status.RESOLVIDO],
+    ).count()
 
 
 @register.simple_tag

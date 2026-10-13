@@ -1,7 +1,10 @@
+from django.conf import settings
 from django.contrib import messages
+from django.contrib.auth import login
 from django.contrib.auth import views as auth_views
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db.models import Q
+from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy
 from django.utils.crypto import get_random_string
@@ -29,11 +32,31 @@ class LoginView(auth_views.LoginView):
     template_name = 'usuarios/login.html'
     authentication_form = LoginForm
 
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        if settings.LOGIN_RAPIDO:
+            context['usuarios_login_rapido'] = Usuario.objects.filter(is_active=True).select_related('setor').order_by(
+                'perfil', 'first_name', 'username'
+            )
+        return context
+
     def get_success_url(self):
         redirect_url = self.get_redirect_url()
         if redirect_url:
             return redirect_url
         return perfil_redirect_url(self.request.user)
+
+
+class LoginRapidoView(View):
+    """Entra como qualquer usuário ativo com um clique, sem senha. Só existe com LOGIN_RAPIDO
+    ligado (testes locais, DEBUG=True); fora disso responde 404."""
+
+    def post(self, request, pk):
+        if not settings.LOGIN_RAPIDO:
+            raise Http404
+        usuario = get_object_or_404(Usuario, pk=pk, is_active=True)
+        login(request, usuario, backend='django.contrib.auth.backends.ModelBackend')
+        return redirect(perfil_redirect_url(usuario))
 
 
 class LogoutView(auth_views.LogoutView):
@@ -167,6 +190,20 @@ class SetorListView(AdministradorRequiredMixin, ListView):
 
     def get_queryset(self):
         return Setor.objects.order_by('nome')
+
+
+class SetorCriticoView(AdministradorRequiredMixin, View):
+    """Marca/desmarca um setor como crítico (afeta a prioridade dos chamados abertos dali em diante)."""
+
+    def post(self, request, pk):
+        setor = get_object_or_404(Setor, pk=pk)
+        setor.critico = not setor.critico
+        setor.save(update_fields=['critico'])
+        if setor.critico:
+            messages.success(request, f'"{setor}" marcado como setor crítico: novos chamados dele sobem um nível de prioridade.')
+        else:
+            messages.success(request, f'"{setor}" deixou de ser setor crítico.')
+        return redirect('usuarios:setores')
 
 
 class SetorCadastroView(AdministradorRequiredMixin, CreateView):

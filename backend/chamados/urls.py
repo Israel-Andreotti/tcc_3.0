@@ -24,6 +24,8 @@ urlpatterns = [
     path('<int:pk>/aguardar-solicitante/', views.ChamadoAguardarSolicitanteView.as_view(), name='aguardar_solicitante'),
     path('<int:pk>/retomar/', views.ChamadoRetomarView.as_view(), name='retomar'),
     path('<int:pk>/responder/', views.ChamadoResponderView.as_view(), name='responder'),
+    path('<int:pk>/confirmar-solucao/', views.ChamadoConfirmarSolucaoView.as_view(), name='confirmar_solucao'),
+    path('<int:pk>/reabrir/', views.ChamadoReabrirView.as_view(), name='reabrir'),
     path('<int:pk>/movimentar-ativo/', views.ChamadoMovimentarAtivoView.as_view(), name='movimentar_ativo'),
     path('<int:pk>/verificar-ativo/', views.ChamadoVerificarAtivoView.as_view(), name='verificar_ativo'),
 ]

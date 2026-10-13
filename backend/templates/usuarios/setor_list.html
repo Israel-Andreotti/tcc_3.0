@@ -5,21 +5,41 @@
     <h1 class="h3 m-0"><i class="bi bi-diagram-3"></i> Setores</h1>
     <a href="{% url 'usuarios:setor_cadastrar' %}" class="btn btn-primary"><i class="bi bi-plus-circle"></i> Cadastrar setor</a>
 </div>
+<p class="text-muted-hd small">Chamados abertos em um <strong>setor crítico</strong> sobem um nível de prioridade (e o SLA acompanha). Vale para os chamados abertos a partir da marcação.</p>
 
 <div class="hd-card p-0 table-responsive">
     <table class="table hd-table align-middle mb-0">
         <thead>
             <tr>
                 <th class="ps-3">Nome</th>
+                <th>Nível</th>
+                <th class="pe-3 text-end">Ações</th>
             </tr>
         </thead>
         <tbody>
             {% for setor in setores %}
             <tr>
                 <td class="ps-3">{{ setor.nome }}</td>
+                <td>
+                    {% if setor.critico %}
+                    <span class="badge rounded-pill prioridade-critica" title="Chamados deste setor sobem um nível de prioridade"><i class="bi bi-exclamation-triangle-fill"></i> Crítico</span>
+                    {% else %}
+                    <span class="badge rounded-pill status-fechado" title="Prioridade dos chamados vem só da subcategoria">Normal</span>
+                    {% endif %}
+                </td>
+                <td class="pe-3 text-end">
+                    <form method="post" action="{% url 'usuarios:setor_critico' setor.pk %}" class="m-0 d-inline">
+                        {% csrf_token %}
+                        {% if setor.critico %}
+                        <button type="submit" class="btn btn-outline-secondary btn-sm">Tornar normal</button>
+                        {% else %}
+                        <button type="submit" class="btn btn-outline-danger btn-sm"><i class="bi bi-exclamation-triangle"></i> Marcar como crítico</button>
+                        {% endif %}
+                    </form>
+                </td>
             </tr>
             {% empty %}
-            <tr><td class="text-center text-muted-hd py-5">Nenhum setor cadastrado.</td></tr>
+            <tr><td colspan="3" class="text-center text-muted-hd py-5">Nenhum setor cadastrado.</td></tr>
             {% endfor %}
         </tbody>
     </table>

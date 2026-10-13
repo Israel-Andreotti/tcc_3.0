@@ -12,6 +12,19 @@ class Prioridade(models.TextChoices):
     CRITICA = 'critica', 'Crítica'
 
 
+# Da menor para a maior: usado para subir um nível de prioridade.
+NIVEIS_PRIORIDADE = [Prioridade.BAIXA, Prioridade.MEDIA, Prioridade.ALTA, Prioridade.CRITICA]
+
+
+def prioridade_do_chamado(prioridade_subcategoria, setor):
+    """Prioridade de um chamado novo: a da subcategoria, um nível acima se o setor for crítico
+    (crítica continua crítica)."""
+    if setor is not None and setor.critico:
+        indice = NIVEIS_PRIORIDADE.index(prioridade_subcategoria)
+        return NIVEIS_PRIORIDADE[min(indice + 1, len(NIVEIS_PRIORIDADE) - 1)]
+    return prioridade_subcategoria
+
+
 class Categoria(models.Model):
     nome = models.CharField(max_length=100, unique=True)
     ordem = models.PositiveIntegerField(default=0)
@@ -78,10 +91,15 @@ class Chamado(models.Model):
     # Solicitantes marcados como VIP têm o prazo de SLA reduzido nesse percentual.
     VIP_SLA_MULTIPLICADOR = 0.75
 
+    # Depois de resolvido, o solicitante tem esse prazo para confirmar a solução ou reabrir o
+    # chamado; sem resposta, o chamado é fechado automaticamente (ver fechar_resolvidos_expirados).
+    DIAS_CONFIRMACAO = 3
+
     titulo = models.CharField(max_length=150)
     descricao = models.TextField()
     status = models.CharField(max_length=25, choices=Status.choices, default=Status.ABERTO)
-    # Nunca definida por formulário de usuário: copiada da subcategoria na abertura (ver save()).
+    # Nunca definida por formulário de usuário: vem da subcategoria na abertura, um nível acima se o
+    # setor do chamado for crítico (ver save() e prioridade_do_chamado).
     prioridade = models.CharField(max_length=10, choices=Prioridade.choices, default=Prioridade.MEDIA)
 
     categoria = models.ForeignKey(
@@ -130,6 +148,9 @@ class Chamado(models.Model):
     criado_em = models.DateTimeField(auto_now_add=True)
     atualizado_em = models.DateTimeField(auto_now=True)
     prazo_sla = models.DateTimeField(null=True, blank=True)
+    # Resolvido = o técnico concluiu e aguarda a confirmação do solicitante (pode ser reaberto).
+    # Fechado = encerramento definitivo (confirmado pelo solicitante ou automático).
+    resolvido_em = models.DateTimeField(null=True, blank=True)
     fechado_em = models.DateTimeField(null=True, blank=True)
     # Pausa do SLA enquanto o chamado aguarda o solicitante: ao retomar, o tempo parado é
     # somado em `sla_tempo_pausado` e o `prazo_sla` é estendido na mesma medida.
@@ -148,7 +169,7 @@ class Chamado(models.Model):
         # Só na abertura: a prioridade da subcategoria pode mudar depois (catálogo), e o chamado
         # já aberto mantém a prioridade com que foi aberto — coerente com o prazo de SLA já calculado.
         if self._state.adding and self.subcategoria_id:
-            self.prioridade = self.subcategoria.prioridade
+            self.prioridade = prioridade_do_chamado(self.subcategoria.prioridade, self.setor)
         if not self.prazo_sla:
             self.prazo_sla = timezone.now() + timedelta(hours=self.sla_horas_configurado())
         super().save(*args, **kwargs)
@@ -160,6 +181,50 @@ class Chamado(models.Model):
         if self.solicitante_id and getattr(self.solicitante, 'vip', False):
             horas *= self.VIP_SLA_MULTIPLICADOR
         return horas
+
+    # ---- Ciclo de encerramento: resolvido -> (confirmação do solicitante) -> fechado ----
+
+    def resolver(self):
+        """Técnico concluiu o atendimento. O SLA fica pausado enquanto aguarda a confirmação do
+        solicitante: se ele reabrir, o relógio volta de onde parou. Não salva."""
+        self.retomar_sla()  # fecha uma pausa anterior (aguardando solicitante), se houver
+        self.pausar_sla()
+        self.status = self.Status.RESOLVIDO
+        self.resolvido_em = timezone.now()
+        self.fechado_em = None
+
+    def fechar(self):
+        """Encerramento definitivo (solução confirmada). Não salva."""
+        self.status = self.Status.FECHADO
+        self.fechado_em = timezone.now()
+        self.sla_pausado_em = None
+
+    def reabrir(self):
+        """Solicitante disse que não foi resolvido: volta para o técnico, com o SLA retomado. Não salva."""
+        self.retomar_sla()
+        self.status = self.Status.EM_ANDAMENTO
+        self.resolvido_em = None
+        self.resposta_solicitante_em = timezone.now()  # avisa o técnico responsável
+
+    @property
+    def aguardando_confirmacao(self):
+        return self.status == self.Status.RESOLVIDO
+
+    @property
+    def prazo_confirmacao(self):
+        """Até quando o solicitante pode confirmar/reabrir antes do fechamento automático."""
+        if self.resolvido_em:
+            return self.resolvido_em + timedelta(days=self.DIAS_CONFIRMACAO)
+        return None
+
+    @classmethod
+    def fechar_resolvidos_expirados(cls):
+        """Fecha os chamados resolvidos cujo prazo de confirmação passou. Não há tarefa agendada no
+        sistema: é chamado ao abrir a fila, o histórico ou um chamado (é só um UPDATE barato)."""
+        prazo = timedelta(days=cls.DIAS_CONFIRMACAO)
+        return cls.objects.filter(
+            status=cls.Status.RESOLVIDO, resolvido_em__lte=timezone.now() - prazo
+        ).update(status=cls.Status.FECHADO, fechado_em=models.F('resolvido_em') + prazo, sla_pausado_em=None)
 
     @classmethod
     def respostas_nao_vistas(cls, tecnico):
@@ -231,13 +296,14 @@ class Chamado(models.Model):
     def sla_tempo_restante_display(self):
         if not self.prazo_sla:
             return '-'
-        delta = self.prazo_sla - self._sla_referencia()
-        segundos = delta.total_seconds()
+        if self.sla_pausado:
+            # Aguardando o solicitante: o relógio está parado, o tempo restante não é relevante.
+            return 'Pausado'
+        segundos = (self.prazo_sla - timezone.now()).total_seconds()
         horas = int(abs(segundos) // 3600)
         minutos = int((abs(segundos) % 3600) // 60)
         texto = f'{horas}h {minutos}min'
-        texto = f'Atrasado há {texto}' if segundos < 0 else f'{texto} restantes'
-        return f'Pausado · {texto}' if self.sla_pausado else texto
+        return f'Atrasado há {texto}' if segundos < 0 else f'{texto} restantes'
 
 
 class Comentario(models.Model):
