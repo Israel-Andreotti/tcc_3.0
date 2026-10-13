@@ -43,27 +43,53 @@ class ChamadoEditavelMixin:
         return super().dispatch(request, *args, **kwargs)
 
 
+# Urgência do SLA: SLA correndo antes de pausado (aguardando o solicitante vai pro fim) e, depois,
+# o prazo mais próximo — estourados ficam no topo e a prioridade entra por tabela (crítico tem
+# prazo bem menor que baixa). Também é o desempate das demais ordenações.
+ORDEM_URGENCIA = ('sla_pausado_ordem', F('prazo_sla').asc(nulls_last=True), 'criado_em')
+
+# Opções do seletor "Ordenar por" da fila: chave -> (rótulo, ordenação).
+ORDENACOES_CHAMADO = {
+    'urgencia': ('Urgência do SLA', ORDEM_URGENCIA),
+    'categoria': ('Categoria', ('categoria__nome', 'subcategoria__nome') + ORDEM_URGENCIA),
+    'prioridade': ('Prioridade', ('prioridade_ordem',) + ORDEM_URGENCIA),
+    'recentes': ('Mais recentes', ('-criado_em',)),
+    'antigos': ('Mais antigos', ('criado_em',)),
+}
+
+
 class ChamadoListView(LoginRequiredMixin, ListView):
     model = Chamado
     template_name = 'chamados/chamado_list.html'
     context_object_name = 'chamados'
     paginate_by = 20
 
+    def get_ordem(self):
+        """Ordenação escolhida; o padrão é urgência para a equipe e mais recentes para o solicitante."""
+        ordem = self.request.GET.get('ordem', '')
+        if ordem in ORDENACOES_CHAMADO:
+            return ordem
+        return 'recentes' if self.request.user.is_solicitante() else 'urgencia'
+
     def get_queryset(self):
         usuario = self.request.user
         qs = Chamado.objects.select_related(
-            'solicitante', 'solicitante__setor', 'atendente', 'atendente__setor', 'categoria', 'subcategoria'
+            'solicitante', 'solicitante__setor', 'atendente', 'atendente__setor', 'categoria', 'subcategoria', 'setor'
         )
         if usuario.is_solicitante():
             qs = qs.filter(solicitante=usuario)
         else:
-            # Fila de trabalho do técnico: só chamados ainda em aberto, por urgência:
-            # 1. SLA correndo antes de SLA pausado (aguardando o solicitante vai pro fim);
-            # 2. prazo de SLA mais próximo primeiro — estourados já ficam no topo, e a prioridade
-            #    entra por tabela (crítico tem prazo bem menor que baixa).
-            qs = qs.exclude(status__in=[Chamado.Status.RESOLVIDO, Chamado.Status.FECHADO]).annotate(
-                sla_pausado_ordem=Case(When(sla_pausado_em__isnull=False, then=1), default=0, output_field=IntegerField())
-            ).order_by('sla_pausado_ordem', F('prazo_sla').asc(nulls_last=True), 'criado_em')
+            # Fila de trabalho do técnico: só chamados ainda em aberto.
+            qs = qs.exclude(status__in=[Chamado.Status.RESOLVIDO, Chamado.Status.FECHADO])
+
+        qs = qs.annotate(
+            sla_pausado_ordem=Case(When(sla_pausado_em__isnull=False, then=1), default=0, output_field=IntegerField()),
+            prioridade_ordem=Case(
+                *[When(prioridade=valor, then=posicao) for valor, posicao in PRIORIDADE_ORDEM.items()],
+                default=99,
+                output_field=IntegerField(),
+            ),
+        ).order_by(*ORDENACOES_CHAMADO[self.get_ordem()][1])
 
         termo = self.request.GET.get('q', '').strip()
         if termo:
@@ -96,6 +122,12 @@ class ChamadoListView(LoginRequiredMixin, ListView):
         context['categoria_selecionada'] = self.request.GET.get('categoria', '')
         context['status_choices'] = Chamado.Status.choices
         context['categorias'] = Categoria.objects.order_by('ordem', 'nome')
+        context['ordem_selecionada'] = self.get_ordem()
+        context['ordenacoes'] = [(chave, rotulo) for chave, (rotulo, _) in ORDENACOES_CHAMADO.items()]
+        # Filtros atuais (sem a página) para os links de paginação não perderem a busca/ordem.
+        parametros = self.request.GET.copy()
+        parametros.pop('page', None)
+        context['filtros_querystring'] = parametros.urlencode()
         if usuario.is_solicitante():
             # Independe de filtro/paginação: alimenta o pop-up e o aviso de "precisa da sua resposta".
             context['aguardando_resposta'] = list(
