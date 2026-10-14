@@ -20,6 +20,17 @@ class PlaceholderSelect(forms.Select):
         return option
 
 
+class SetorSelect(PlaceholderSelect):
+    """Select de setor que marca os setores críticos com data-critico, para o template avisar
+    (abaixo do campo) quando o setor escolhido eleva a prioridade do chamado."""
+
+    def create_option(self, name, value, label, selected, index, subindex=None, attrs=None):
+        option = super().create_option(name, value, label, selected, index, subindex, attrs)
+        if value not in (None, '') and value.instance.critico:
+            option['attrs']['data-critico'] = '1'
+        return option
+
+
 class SubcategoriaSelect(PlaceholderSelect):
     """Select que anota cada <option> com data-categoria, para o JS de cascata filtrar no template."""
 
@@ -38,7 +49,7 @@ class ChamadoCreateForm(forms.ModelForm):
         widgets = {
             'categoria': PlaceholderSelect(attrs={'class': 'form-select', 'id': 'id_categoria'}),
             'subcategoria': SubcategoriaSelect(attrs={'class': 'form-select', 'id': 'id_subcategoria'}),
-            'setor': PlaceholderSelect(attrs={'class': 'form-select'}),
+            'setor': SetorSelect(attrs={'class': 'form-select', 'id': 'id_setor'}),
             'descricao': forms.Textarea(attrs={'class': 'form-control', 'rows': 4}),
         }
 
@@ -51,7 +62,6 @@ class ChamadoCreateForm(forms.ModelForm):
         self.fields['subcategoria'].queryset = Subcategoria.objects.select_related('categoria')
         self.fields['setor'].required = True
         self.fields['setor'].empty_label = 'Selecione um setor'
-        self.fields['setor'].label_from_instance = lambda setor: f'{setor.nome} (setor crítico)' if setor.critico else setor.nome
         if usuario is not None and usuario.setor_id and not self.is_bound:
             self.fields['setor'].initial = usuario.setor_id
 

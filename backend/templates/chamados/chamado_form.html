@@ -12,6 +12,11 @@
                 <div class="mb-3">
                     <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
                     {{ field }}
+                    {% if field.name == 'setor' %}
+                    <div id="avisoSetorCritico" class="form-text text-danger d-none">
+                        <i class="bi bi-exclamation-triangle-fill"></i> Setor crítico: a prioridade deste chamado sobe um nível.
+                    </div>
+                    {% endif %}
                     {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
                     {% if field.errors %}<div class="text-danger small">{{ field.errors }}</div>{% endif %}
                 </div>
@@ -23,6 +28,19 @@
 </div>
 
 <script>
+// Aviso abaixo do campo Setor quando o setor escolhido é crítico (eleva a prioridade).
+(function () {
+    var setorSelect = document.getElementById('id_setor');
+    var aviso = document.getElementById('avisoSetorCritico');
+    if (!setorSelect || !aviso) return;
+    function atualizar() {
+        var opcao = setorSelect.options[setorSelect.selectedIndex];
+        aviso.classList.toggle('d-none', !(opcao && opcao.dataset.critico === '1'));
+    }
+    setorSelect.addEventListener('change', atualizar);
+    atualizar();
+})();
+
 (function () {
     var categoriaSelect = document.getElementById('id_categoria');
     var subcategoriaSelect = document.getElementById('id_subcategoria');

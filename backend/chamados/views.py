@@ -80,6 +80,16 @@ def anotacao_sla_consumido():
     return ExpressionWrapper((decorrido - pausado) / NullIf(total - pausado, 0), output_field=FloatField())
 
 
+def versao_fila():
+    """Identificador do estado da fila da equipe (chamados em aberto): muda quando um chamado entra,
+    sai ou é alterado (atribuído, status...). A página da fila compara periodicamente e recarrega."""
+    dados = Chamado.objects.exclude(status__in=[Chamado.Status.RESOLVIDO, Chamado.Status.FECHADO]).aggregate(
+        total=models.Count('pk'), ultimo=models.Max('atualizado_em'), maior_id=models.Max('pk')
+    )
+    ultimo = dados['ultimo'].timestamp() if dados['ultimo'] else 0
+    return f"{dados['total']}-{dados['maior_id'] or 0}-{ultimo:.6f}"
+
+
 class ChamadoListView(LoginRequiredMixin, ListView):
     model = Chamado
     template_name = 'chamados/chamado_list.html'
@@ -162,6 +172,8 @@ class ChamadoListView(LoginRequiredMixin, ListView):
         parametros = self.request.GET.copy()
         parametros.pop('page', None)
         context['filtros_querystring'] = parametros.urlencode()
+        if not usuario.is_solicitante():
+            context['versao_fila'] = versao_fila()
         if usuario.is_solicitante():
             # Independe de filtro/paginação: alimenta o pop-up e o aviso de "precisa da sua resposta".
             context['pendencias_solicitante'] = list(
@@ -282,8 +294,23 @@ class ChamadoCreateView(LoginRequiredMixin, CreateView):
 
 
 class ChamadoPegarView(AtendenteRequiredMixin, ChamadoEditavelMixin, View):
+    """"Atribuir a mim": só vale para chamado sem técnico. A linha é travada (select_for_update) para
+    que dois técnicos clicando ao mesmo tempo não troquem o dono um do outro; para mudar o técnico
+    de propósito existe o "Reatribuir"."""
+
+    @transaction.atomic
     def post(self, request, pk):
-        chamado = get_object_or_404(Chamado, pk=pk)
+        # Sem select_related: se a requisição esperou a trava, o PostgreSQL relê a linha do chamado já
+        # atualizada, mas os dados do técnico vindos no JOIN seriam os da leitura antiga (vazios).
+        # Buscando o técnico depois (acesso a chamado.atendente), ele vem atualizado.
+        chamado = get_object_or_404(Chamado.objects.select_for_update(of=('self',)), pk=pk)
+        if chamado.atendente_id == request.user.pk:
+            messages.info(request, 'Este chamado já está com você.')
+            return redirect('chamados:detail', pk=pk)
+        if chamado.atendente_id:
+            nome = chamado.atendente.get_full_name() or chamado.atendente.username
+            messages.error(request, f'Este chamado já foi atribuído a {nome}. A fila foi atualizada.')
+            return redirect('chamados:list')
         chamado.atendente = request.user
         if chamado.status == Chamado.Status.ABERTO:
             chamado.status = Chamado.Status.EM_ANDAMENTO
@@ -527,6 +554,14 @@ def destino_display(setor, funcionario):
     if funcionario:
         return f'{funcionario.get_full_name() or funcionario.username} (funcionário)'
     return str(setor)
+
+
+class ChamadoFilaVersaoView(AtendenteRequiredMixin, View):
+    """JSON consultado pela página da fila para saber se precisa recarregar."""
+
+    def get(self, request):
+        Chamado.fechar_resolvidos_expirados()
+        return JsonResponse({'versao': versao_fila()})
 
 
 class ChamadoNotificacoesView(AtendenteRequiredMixin, View):

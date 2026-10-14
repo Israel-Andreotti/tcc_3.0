@@ -8,6 +8,7 @@ urlpatterns = [
     path('', views.ChamadoListView.as_view(), name='list'),
     path('historico/', views.ChamadoHistoricoView.as_view(), name='historico'),
     path('notificacoes/', views.ChamadoNotificacoesView.as_view(), name='notificacoes'),
+    path('fila/versao/', views.ChamadoFilaVersaoView.as_view(), name='fila_versao'),
     path('catalogo/', views.CatalogoServicosView.as_view(), name='catalogo'),
     path('catalogo/sla/<int:pk>/editar/', views.SLAEditarView.as_view(), name='sla_editar'),
     path('catalogo/categoria/cadastrar/', views.CategoriaCadastroView.as_view(), name='categoria_cadastrar'),

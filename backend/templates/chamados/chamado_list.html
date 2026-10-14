@@ -227,4 +227,44 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 </script>
 {% endif %}
+{% if versao_fila %}
+<script>
+// Fila da equipe atualiza sozinha: a cada 15s consulta se algo mudou (chamado novo, atribuído por outro
+// técnico, status...) e recarrega mantendo filtros e ordenação. Não recarrega com a aba em segundo
+// plano nem enquanto o usuário digita/escolhe algo num campo — espera ele terminar.
+(function () {
+    var versaoAtual = '{{ versao_fila|escapejs }}';
+    var url = '{% url "chamados:fila_versao" %}';
+    var INTERVALO_MS = 15000;
+    var recarregarPendente = false;
+
+    function ocupado() {
+        var ativo = document.activeElement;
+        return ativo && ['INPUT', 'SELECT', 'TEXTAREA'].indexOf(ativo.tagName) !== -1;
+    }
+
+    function recarregar() {
+        if (ocupado()) { recarregarPendente = true; return; }
+        window.location.reload();
+    }
+
+    function verificar() {
+        if (document.hidden) return;
+        fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+            .then(function (resposta) { return resposta.ok ? resposta.json() : null; })
+            .then(function (dados) {
+                if (dados && dados.versao !== versaoAtual) recarregar();
+            })
+            .catch(function () {});
+    }
+
+    // Se a atualização ficou esperando o usuário sair do campo, recarrega quando ele sair.
+    document.addEventListener('focusout', function () {
+        setTimeout(function () { if (recarregarPendente && !ocupado()) window.location.reload(); }, 300);
+    });
+    document.addEventListener('visibilitychange', function () { if (!document.hidden) verificar(); });
+    setInterval(verificar, INTERVALO_MS);
+})();
+</script>
+{% endif %}
 {% endblock %}
