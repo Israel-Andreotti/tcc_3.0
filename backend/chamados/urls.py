@@ -15,6 +15,7 @@ urlpatterns = [
     path('catalogo/categoria/<int:pk>/editar/', views.CategoriaEditarView.as_view(), name='categoria_editar'),
     path('catalogo/categoria/<int:pk>/subcategorias/', views.SubcategoriaAdicionarView.as_view(), name='subcategoria_adicionar'),
     path('catalogo/subcategoria/<int:pk>/prioridade/', views.SubcategoriaPrioridadeView.as_view(), name='subcategoria_prioridade'),
+    path('catalogo/subcategoria/<int:pk>/tipo/', views.SubcategoriaTipoView.as_view(), name='subcategoria_tipo'),
     path('catalogo/subcategoria/<int:pk>/excluir/', views.SubcategoriaExcluirView.as_view(), name='subcategoria_excluir'),
     path('novo/', views.ChamadoCreateView.as_view(), name='create'),
     path('<int:pk>/', views.ChamadoDetailView.as_view(), name='detail'),
@@ -27,6 +28,7 @@ urlpatterns = [
     path('<int:pk>/responder/', views.ChamadoResponderView.as_view(), name='responder'),
     path('<int:pk>/confirmar-solucao/', views.ChamadoConfirmarSolucaoView.as_view(), name='confirmar_solucao'),
     path('<int:pk>/reabrir/', views.ChamadoReabrirView.as_view(), name='reabrir'),
+    path('<int:pk>/avaliar/', views.ChamadoAvaliarView.as_view(), name='avaliar'),
     path('<int:pk>/movimentar-ativo/', views.ChamadoMovimentarAtivoView.as_view(), name='movimentar_ativo'),
     path('<int:pk>/verificar-ativo/', views.ChamadoVerificarAtivoView.as_view(), name='verificar_ativo'),
 ]

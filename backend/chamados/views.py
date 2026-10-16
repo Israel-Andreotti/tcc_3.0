@@ -1,3 +1,5 @@
+import re
+
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db import models, transaction
@@ -23,7 +25,10 @@ from .forms import (
     SLAPrioridadeForm,
     SubcategoriaForm,
 )
-from .models import Categoria, Chamado, Prioridade, ProcedimentoEntry, SLAPrioridade, Subcategoria
+from .models import (
+    PREFIXO_CODIGO, Categoria, Chamado, EventoChamado, Prioridade, ProcedimentoEntry, SLAPrioridade, Subcategoria,
+    TipoChamado, formatar_codigo,
+)
 
 # Ordem de urgência (mais urgente primeiro) e descrição curta de cada prioridade,
 # usadas na tela do catálogo de serviços.
@@ -90,6 +95,18 @@ def versao_fila():
     return f"{dados['total']}-{dados['maior_id'] or 0}-{ultimo:.6f}"
 
 
+def filtro_busca_chamado(termo):
+    """Busca pelo título ou pelo código: aceita "INC000007", "inc7", "REQ12" ou só o número
+    ("7" encontra INC000007 e REQ000007)."""
+    filtro = models.Q(titulo__icontains=termo)
+    codigo = re.fullmatch(r'#?\s*(INC|REQ)?\s*0*(\d+)', termo, re.IGNORECASE)
+    if codigo:
+        prefixo, numero = (codigo.group(1) or '').upper(), int(codigo.group(2))
+        tipos = [t for t, p in PREFIXO_CODIGO.items() if not prefixo or p == prefixo]
+        filtro |= models.Q(codigo__in=[formatar_codigo(t, numero) for t in tipos])
+    return filtro
+
+
 class ChamadoListView(LoginRequiredMixin, ListView):
     model = Chamado
     template_name = 'chamados/chamado_list.html'
@@ -137,11 +154,7 @@ class ChamadoListView(LoginRequiredMixin, ListView):
 
         termo = self.request.GET.get('q', '').strip()
         if termo:
-            termo_id = termo.lstrip('#')
-            filtro = models.Q(titulo__icontains=termo)
-            if termo_id.isdigit():
-                filtro |= models.Q(pk=int(termo_id))
-            qs = qs.filter(filtro)
+            qs = qs.filter(filtro_busca_chamado(termo))
 
         status = self.request.GET.get('status', '').strip()
         if status:
@@ -150,6 +163,10 @@ class ChamadoListView(LoginRequiredMixin, ListView):
         categoria_id = self.request.GET.get('categoria', '').strip()
         if categoria_id:
             qs = qs.filter(categoria_id=categoria_id)
+
+        tipo = self.request.GET.get('tipo', '').strip()
+        if tipo in TipoChamado.values:
+            qs = qs.filter(tipo=tipo)
 
         if not usuario.is_solicitante():
             atendente_id = self.request.GET.get('atendente', '').strip()
@@ -164,6 +181,8 @@ class ChamadoListView(LoginRequiredMixin, ListView):
         context['q'] = self.request.GET.get('q', '')
         context['status_selecionado'] = self.request.GET.get('status', '')
         context['categoria_selecionada'] = self.request.GET.get('categoria', '')
+        context['tipo_selecionado'] = self.request.GET.get('tipo', '')
+        context['tipo_choices'] = TipoChamado.choices
         context['status_choices'] = Chamado.Status.choices
         context['categorias'] = Categoria.objects.order_by('ordem', 'nome')
         context['ordem_selecionada'] = self.get_ordem()
@@ -206,7 +225,7 @@ class ChamadoHistoricoView(AtendenteRequiredMixin, ListView):
         termo = self.request.GET.get('q', '').strip()
         if termo:
             qs = qs.filter(
-                models.Q(titulo__icontains=termo)
+                filtro_busca_chamado(termo)
                 | models.Q(descricao__icontains=termo)
                 | models.Q(solicitante__username__icontains=termo)
             )
@@ -264,11 +283,22 @@ class ChamadoDetailView(LoginRequiredMixin, DetailView):
             ).select_related('autor')
             context['pode_responder'] = self.object.status == Chamado.Status.AGUARDANDO_SOLICITANTE
             context['pode_confirmar'] = self.object.status == Chamado.Status.RESOLVIDO
+            context['pode_avaliar'] = self.object.status == Chamado.Status.FECHADO and self.object.avaliacao is None
+            context['abrir_avaliacao'] = context['pode_avaliar'] and self.request.GET.get('avaliar') == '1'
             if context['pode_responder']:
                 # Última orientação pública da equipe: é o que o solicitante precisa responder.
                 context['pedido_tecnico'] = self.object.procedimentos.filter(
                     tipo=ProcedimentoEntry.Tipo.PUBLICO
                 ).select_related('autor').last()
+
+        # Linha do tempo: procedimentos (conteúdo) + eventos do ciclo de vida, em ordem cronológica.
+        eventos = self.object.eventos.select_related('autor')
+        if not context['pode_gerenciar']:
+            eventos = eventos.filter(publico=True)
+        context['linha_do_tempo'] = sorted(
+            [('procedimento', p) for p in context['procedimentos']] + [('evento', e) for e in eventos],
+            key=lambda item: item[1].criado_em,
+        )
         return context
 
 
@@ -286,6 +316,12 @@ class ChamadoCreateView(LoginRequiredMixin, CreateView):
         form.instance.solicitante = self.request.user
         form.instance.titulo = form.instance.subcategoria.nome
         response = super().form_valid(form)
+        chamado = self.object
+        descricao = f'Abriu o chamado ({chamado.get_tipo_display().lower()}) — prioridade {chamado.get_prioridade_display()}'
+        if chamado.subcategoria and chamado.prioridade != chamado.subcategoria.prioridade:
+            descricao += ' (elevada por setor crítico)'
+        descricao += f', prazo de SLA {timezone.localtime(chamado.prazo_sla):%d/%m/%Y %H:%M}.'
+        chamado.registrar_evento(EventoChamado.Tipo.ABERTURA, self.request.user, descricao)
         messages.success(self.request, 'Chamado aberto com sucesso.')
         return response
 
@@ -311,10 +347,9 @@ class ChamadoPegarView(AtendenteRequiredMixin, ChamadoEditavelMixin, View):
             nome = chamado.atendente.get_full_name() or chamado.atendente.username
             messages.error(request, f'Este chamado já foi atribuído a {nome}. A fila foi atualizada.')
             return redirect('chamados:list')
-        chamado.atendente = request.user
-        if chamado.status == Chamado.Status.ABERTO:
-            chamado.status = Chamado.Status.EM_ANDAMENTO
+        chamado.atribuir(request.user)
         chamado.save()
+        chamado.registrar_evento(EventoChamado.Tipo.ATRIBUICAO, request.user, 'Assumiu o chamado.')
         messages.success(request, 'Chamado atribuído a você.')
         return redirect('chamados:detail', pk=pk)
 
@@ -328,6 +363,9 @@ class ProcedimentoEntryCreateView(AtendenteRequiredMixin, ChamadoEditavelMixin, 
             entrada.chamado = chamado
             entrada.autor = request.user
             entrada.save()
+            if entrada.tipo == ProcedimentoEntry.Tipo.PUBLICO and chamado.primeira_resposta_em is None:
+                chamado.registrar_primeira_resposta()
+                chamado.save(update_fields=['primeira_resposta_em', 'atualizado_em'])
             messages.success(request, 'Procedimento registrado.')
         else:
             messages.error(request, 'Não foi possível registrar o procedimento.')
@@ -340,16 +378,27 @@ class ChamadoConcluirView(AtendenteRequiredMixin, ChamadoEditavelMixin, View):
         chamado = get_object_or_404(Chamado, pk=pk)
         chamado.resolver()
         chamado.save()
+        prazo = 'dentro do prazo de SLA' if chamado.resolvido_no_prazo else 'fora do prazo de SLA'
+        chamado.registrar_evento(
+            EventoChamado.Tipo.RESOLVIDO, request.user,
+            f'Marcou como resolvido ({prazo}); aguardando a confirmação do solicitante.',
+        )
 
         pendentes = chamado.movimentacoes_ativo.filter(status=MovimentacaoAtivo.Status.PENDENTE).select_related('ativo')
         efetivadas = 0
         for movimentacao in pendentes:
             movimentacao.efetivar()
+            chamado.registrar_evento(
+                EventoChamado.Tipo.MOVIMENTACAO, request.user,
+                f'Efetivou a movimentação de {movimentacao.ativo}: {movimentacao.origem_display} → '
+                f'{movimentacao.destino_display}.',
+                publico=False,
+            )
             efetivadas += 1
 
         aviso = (
             f'Chamado resolvido. Aguardando a confirmação do solicitante '
-            f'(fecha automaticamente em {Chamado.DIAS_CONFIRMACAO} dias).'
+            f'(fecha automaticamente em {Chamado.prazo_confirmacao_display()}).'
         )
         if efetivadas:
             aviso += f' {efetivadas} movimentação(ões) de ativo efetivada(s).'
@@ -368,10 +417,14 @@ class ChamadoReatribuirView(AtendenteRequiredMixin, ChamadoEditavelMixin, View):
         if not tecnico:
             messages.error(request, 'Selecione um técnico válido para reatribuir o chamado.')
             return redirect('chamados:detail', pk=pk)
-        chamado.atendente = tecnico
-        if chamado.status == Chamado.Status.ABERTO:
-            chamado.status = Chamado.Status.EM_ANDAMENTO
+        anterior = chamado.atendente
+        chamado.atribuir(tecnico)
         chamado.save()
+        de = f'de {anterior.get_full_name() or anterior.username} ' if anterior else ''
+        chamado.registrar_evento(
+            EventoChamado.Tipo.REATRIBUICAO, request.user,
+            f'Reatribuiu o chamado {de}para {tecnico.get_full_name() or tecnico.username}.',
+        )
         messages.success(request, f'Chamado reatribuído para {tecnico}.')
         return redirect('chamados:detail', pk=pk)
 
@@ -385,13 +438,43 @@ class ChamadoConfirmarSolucaoView(LoginRequiredMixin, View):
         if chamado.status != Chamado.Status.RESOLVIDO:
             messages.info(request, 'Este chamado não está aguardando a sua confirmação.')
             return redirect('chamados:detail', pk=pk)
-        ProcedimentoEntry.objects.create(
-            chamado=chamado, autor=request.user, tipo=ProcedimentoEntry.Tipo.RESPOSTA,
-            texto='Confirmou que o problema foi resolvido.',
-        )
         chamado.fechar()
         chamado.save()
+        chamado.registrar_evento(
+            EventoChamado.Tipo.FECHADO, request.user, 'Confirmou que o problema foi resolvido; chamado fechado.'
+        )
         messages.success(request, 'Obrigado! O chamado foi fechado.')
+        # Abre o pop-up de avaliação na página do chamado.
+        return redirect(f"{reverse('chamados:detail', kwargs={'pk': pk})}?avaliar=1")
+
+
+class ChamadoAvaliarView(LoginRequiredMixin, View):
+    """Avaliação do atendimento pelo solicitante (1 a 5, CSAT), depois que o chamado foi fechado.
+    Opcional e uma única vez por chamado; o comentário, se houver, vai para a linha do tempo."""
+
+    @transaction.atomic
+    def post(self, request, pk):
+        chamado = get_object_or_404(Chamado, pk=pk, solicitante=request.user)
+        if chamado.status != Chamado.Status.FECHADO or chamado.avaliacao is not None:
+            messages.info(request, 'Este chamado não pode ser avaliado.')
+            return redirect('chamados:detail', pk=pk)
+        nota = request.POST.get('avaliacao', '')
+        if nota not in {'1', '2', '3', '4', '5'}:
+            messages.error(request, 'Escolha de 1 a 5 estrelas para avaliar.')
+            return redirect(f"{reverse('chamados:detail', kwargs={'pk': pk})}?avaliar=1")
+        chamado.avaliacao = int(nota)
+        chamado.save(update_fields=['avaliacao', 'atualizado_em'])
+        classificacao = Chamado.CLASSIFICACAO_AVALIACAO[int(nota)][0]
+        chamado.registrar_evento(
+            EventoChamado.Tipo.AVALIADO, request.user, f'Avaliou o atendimento: {nota} de 5 estrelas ({classificacao}).'
+        )
+        comentario = request.POST.get('comentario', '').strip()
+        if comentario:
+            ProcedimentoEntry.objects.create(
+                chamado=chamado, autor=request.user, tipo=ProcedimentoEntry.Tipo.RESPOSTA,
+                texto=f'Comentário da avaliação: {comentario}',
+            )
+        messages.success(request, 'Obrigado pela avaliação!')
         return redirect('chamados:detail', pk=pk)
 
 
@@ -415,6 +498,10 @@ class ChamadoReabrirView(LoginRequiredMixin, View):
         )
         chamado.reabrir()
         chamado.save()
+        chamado.registrar_evento(
+            EventoChamado.Tipo.REABERTO, request.user,
+            f'Informou que não foi resolvido; chamado reaberto (reabertura nº {chamado.reaberturas}).',
+        )
         messages.success(request, 'Chamado reaberto. O técnico vai continuar o atendimento.')
         return redirect('chamados:detail', pk=pk)
 
@@ -438,10 +525,15 @@ class ChamadoAguardarSolicitanteView(AtendenteRequiredMixin, ChamadoEditavelMixi
             chamado=chamado, autor=request.user, tipo=ProcedimentoEntry.Tipo.PUBLICO, texto=texto
         )
         if not chamado.atendente_id:
-            chamado.atendente = request.user
+            chamado.atribuir(request.user)
+        chamado.registrar_primeira_resposta()
+        chamado.pediu_info = True
         chamado.status = Chamado.Status.AGUARDANDO_SOLICITANTE
         chamado.pausar_sla()
         chamado.save()
+        chamado.registrar_evento(
+            EventoChamado.Tipo.AGUARDANDO, request.user, 'Pausou o atendimento aguardando o solicitante (SLA pausado).'
+        )
         messages.success(request, 'Chamado aguardando o solicitante. O SLA está pausado.')
         return redirect('chamados:detail', pk=pk)
 
@@ -457,6 +549,7 @@ class ChamadoRetomarView(AtendenteRequiredMixin, ChamadoEditavelMixin, View):
         chamado.status = Chamado.Status.EM_ANDAMENTO
         chamado.retomar_sla()
         chamado.save()
+        chamado.registrar_evento(EventoChamado.Tipo.RETOMADO, request.user, 'Retomou o atendimento (SLA retomado).')
         messages.success(request, 'Atendimento retomado. O SLA voltou a contar.')
         return redirect('chamados:detail', pk=pk)
 
@@ -483,6 +576,9 @@ class ChamadoResponderView(LoginRequiredMixin, ChamadoEditavelMixin, View):
             chamado.retomar_sla()
             chamado.resposta_solicitante_em = timezone.now()  # notifica o técnico responsável
             chamado.save()
+            chamado.registrar_evento(
+                EventoChamado.Tipo.RESPONDIDO, request.user, 'Respondeu; o chamado voltou para atendimento (SLA retomado).'
+            )
         messages.success(request, 'Resposta enviada. O chamado voltou para atendimento.')
         return redirect('chamados:detail', pk=pk)
 
@@ -577,6 +673,7 @@ class ChamadoNotificacoesView(AtendenteRequiredMixin, View):
             'itens': [
                 {
                     'id': ch.pk,
+                    'codigo': ch.codigo,
                     'titulo': ch.titulo,
                     'solicitante': ch.solicitante.get_full_name() or ch.solicitante.username,
                     'em': ch.resposta_solicitante_em.isoformat(),
@@ -632,6 +729,11 @@ class ChamadoMovimentarAtivoView(AtendenteRequiredMixin, ChamadoEditavelMixin, V
         desatribuir = ''
         if ativo.funcionario_id:
             desatribuir = f' (será desatribuído de {ativo.funcionario.get_full_name() or ativo.funcionario.username})'
+        chamado.registrar_evento(
+            EventoChamado.Tipo.MOVIMENTACAO, request.user,
+            f'Registrou a movimentação de {ativo} para {destino_display(setor, funcionario)} (pendente até a conclusão).',
+            publico=False,
+        )
         messages.success(
             request,
             f'Movimentação de "{ativo}" para {destino_display(setor, funcionario)}{desatribuir} registrada como '
@@ -699,6 +801,7 @@ class CategoriaEditarView(AdministradorRequiredMixin, UpdateView):
         context = super().get_context_data(**kwargs)
         context['subcategorias'] = self.object.subcategorias.order_by('nome')
         context['prioridade_choices'] = Prioridade.choices
+        context['tipo_choices'] = TipoChamado.choices
         context.setdefault('subcategoria_form', SubcategoriaForm(categoria=self.object))
         return context
 
@@ -726,6 +829,7 @@ class SubcategoriaAdicionarView(AdministradorRequiredMixin, View):
             'form': CategoriaForm(instance=categoria),
             'subcategorias': categoria.subcategorias.order_by('nome'),
             'prioridade_choices': Prioridade.choices,
+            'tipo_choices': TipoChamado.choices,
             'subcategoria_form': form,
         })
 
@@ -746,6 +850,25 @@ class SubcategoriaPrioridadeView(AdministradorRequiredMixin, View):
                 request,
                 f'Prioridade de "{subcategoria.nome}" alterada para {subcategoria.get_prioridade_display()} '
                 '(vale para os próximos chamados).',
+            )
+        return redirect('chamados:categoria_editar', pk=subcategoria.categoria_id)
+
+
+class SubcategoriaTipoView(AdministradorRequiredMixin, View):
+    """Troca o tipo (incidente/requisição) de uma subcategoria. Vale para os chamados abertos a
+    partir de agora; os já abertos mantêm o tipo com que foram abertos."""
+
+    def post(self, request, pk):
+        subcategoria = get_object_or_404(Subcategoria, pk=pk)
+        tipo = request.POST.get('tipo', '')
+        if tipo not in TipoChamado.values:
+            messages.error(request, 'Tipo inválido.')
+        elif tipo != subcategoria.tipo:
+            subcategoria.tipo = tipo
+            subcategoria.save(update_fields=['tipo'])
+            messages.success(
+                request,
+                f'"{subcategoria.nome}" agora é {subcategoria.get_tipo_display().lower()} (vale para os próximos chamados).',
             )
         return redirect('chamados:categoria_editar', pk=subcategoria.categoria_id)
 

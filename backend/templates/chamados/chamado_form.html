@@ -12,6 +12,9 @@
                 <div class="mb-3">
                     <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
                     {{ field }}
+                    {% if field.name == 'subcategoria' %}
+                    <div id="avisoTipoChamado" class="form-text d-none"></div>
+                    {% endif %}
                     {% if field.name == 'setor' %}
                     <div id="avisoSetorCritico" class="form-text text-danger d-none">
                         <i class="bi bi-exclamation-triangle-fill"></i> Setor crítico: a prioridade deste chamado sobe um nível.
@@ -28,6 +31,26 @@
 </div>
 
 <script>
+// Abaixo da subcategoria: se o chamado será um incidente ou uma requisição de serviço (ITIL).
+(function () {
+    var select = document.getElementById('id_subcategoria');
+    var aviso = document.getElementById('avisoTipoChamado');
+    if (!select || !aviso) return;
+    var explicacao = {
+        'Incidente': '<i class="bi bi-exclamation-diamond"></i> <strong>Incidente</strong>: algo parou ou não funciona como deveria.',
+        'Requisição': '<i class="bi bi-clipboard-check"></i> <strong>Requisição de serviço</strong>: pedido de algo padrão (acesso, instalação, material).'
+    };
+    function atualizar() {
+        var opcao = select.options[select.selectedIndex];
+        var tipo = opcao && opcao.dataset.tipo;
+        aviso.innerHTML = explicacao[tipo] || '';
+        aviso.classList.toggle('d-none', !explicacao[tipo]);
+    }
+    select.addEventListener('change', atualizar);
+    document.getElementById('id_categoria') && document.getElementById('id_categoria').addEventListener('change', function () { setTimeout(atualizar, 0); });
+    atualizar();
+})();
+
 // Aviso abaixo do campo Setor quando o setor escolhido é crítico (eleva a prioridade).
 (function () {
     var setorSelect = document.getElementById('id_setor');

@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Categoria, Chamado, Comentario, ProcedimentoEntry, SLAPrioridade, Subcategoria
+from .models import Categoria, Chamado, Comentario, EventoChamado, ProcedimentoEntry, SLAPrioridade, Subcategoria
 
 
 class SubcategoriaInline(admin.TabularInline):
@@ -22,6 +22,19 @@ class ComentarioInline(admin.TabularInline):
     readonly_fields = ('autor', 'criado_em')
 
 
+class EventoChamadoInline(admin.TabularInline):
+    """Log de auditoria do ciclo de vida: somente leitura."""
+
+    model = EventoChamado
+    extra = 0
+    fields = ('criado_em', 'tipo', 'autor', 'descricao', 'publico')
+    readonly_fields = fields
+    can_delete = False
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+
 class ProcedimentoEntryInline(admin.TabularInline):
     model = ProcedimentoEntry
     extra = 0
@@ -35,8 +48,8 @@ class SLAPrioridadeAdmin(admin.ModelAdmin):
 
 @admin.register(Chamado)
 class ChamadoAdmin(admin.ModelAdmin):
-    list_display = ('id', 'titulo', 'categoria', 'subcategoria', 'status', 'prioridade', 'solicitante', 'atendente', 'criado_em')
+    list_display = ('codigo', 'titulo', 'categoria', 'subcategoria', 'status', 'prioridade', 'solicitante', 'atendente', 'criado_em')
     list_filter = ('status', 'prioridade', 'categoria')
-    search_fields = ('titulo', 'descricao')
+    search_fields = ('codigo', 'titulo', 'descricao')
     readonly_fields = ('prioridade',)  # deriva sempre da subcategoria, ver Chamado.save()
-    inlines = [ProcedimentoEntryInline, ComentarioInline]
+    inlines = [EventoChamadoInline, ProcedimentoEntryInline, ComentarioInline]

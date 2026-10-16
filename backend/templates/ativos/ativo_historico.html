@@ -44,7 +44,7 @@
                 <td>{{ mov.realizado_por.get_full_name|default:mov.realizado_por.username }}</td>
                 <td class="text-nowrap">
                     {% if mov.chamado %}
-                    <a href="{% url 'chamados:detail' mov.chamado.pk %}">Chamado #{{ mov.chamado.pk }}</a>
+                    <a href="{% url 'chamados:detail' mov.chamado.pk %}">Chamado {{ mov.chamado.codigo }}</a>
                     {% else %}
                     Edição manual
                     {% endif %}

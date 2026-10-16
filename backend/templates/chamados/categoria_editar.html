@@ -24,6 +24,15 @@
                 {% for sub in subcategorias %}
                 <li class="d-flex flex-wrap align-items-center gap-2 py-2{% if not forloop.last %} border-bottom{% endif %}">
                     <span class="flex-grow-1">{{ sub.nome }}</span>
+                    <form method="post" action="{% url 'chamados:subcategoria_tipo' sub.pk %}" class="m-0">
+                        {% csrf_token %}
+                        <select name="tipo" class="form-select form-select-sm" style="width: auto;"
+                                aria-label="Tipo de {{ sub.nome }}" onchange="this.form.submit()">
+                            {% for valor, rotulo in tipo_choices %}
+                            <option value="{{ valor }}"{% if valor == sub.tipo %} selected{% endif %}>{{ rotulo }}</option>
+                            {% endfor %}
+                        </select>
+                    </form>
                     <form method="post" action="{% url 'chamados:subcategoria_prioridade' sub.pk %}" class="m-0">
                         {% csrf_token %}
                         <select name="prioridade" class="form-select form-select-sm" style="width: auto;"
@@ -48,11 +57,15 @@
             <form method="post" action="{% url 'chamados:subcategoria_adicionar' categoria.pk %}" class="border-top pt-3">
                 {% csrf_token %}
                 <div class="row g-2 align-items-end">
-                    <div class="col-sm-6">
+                    <div class="col-sm-5">
                         <label class="form-label" for="{{ subcategoria_form.nome.id_for_label }}">{{ subcategoria_form.nome.label }}</label>
                         {{ subcategoria_form.nome }}
                     </div>
-                    <div class="col-sm-3">
+                    <div class="col-sm-2">
+                        <label class="form-label" for="{{ subcategoria_form.tipo.id_for_label }}">{{ subcategoria_form.tipo.label }}</label>
+                        {{ subcategoria_form.tipo }}
+                    </div>
+                    <div class="col-sm-2">
                         <label class="form-label" for="{{ subcategoria_form.prioridade.id_for_label }}">{{ subcategoria_form.prioridade.label }}</label>
                         {{ subcategoria_form.prioridade }}
                     </div>
@@ -62,7 +75,7 @@
                 </div>
                 {% for erro in subcategoria_form.nome.errors %}<div class="text-danger small mt-1">{{ erro }}</div>{% endfor %}
                 {% for erro in subcategoria_form.prioridade.errors %}<div class="text-danger small mt-1">{{ erro }}</div>{% endfor %}
-                <div class="form-text">A prioridade padrão define a prioridade (e o SLA) dos chamados abertos nessa subcategoria. Alterar a prioridade vale para os próximos chamados; os já abertos não mudam.</div>
+                <div class="form-text"><strong>Incidente</strong>: algo parou ou não funciona como deveria; <strong>requisição</strong>: pedido de algo padrão (acesso, instalação, material). A prioridade padrão define a prioridade (e o SLA) dos chamados abertos nessa subcategoria. Alterar a prioridade vale para os próximos chamados; os já abertos não mudam.</div>
             </form>
         </div>
     </div>

@@ -16,7 +16,7 @@
     <table class="table hd-table table-hover align-middle mb-0">
         <thead>
             <tr>
-                <th class="ps-3">#</th>
+                <th class="ps-3">Chamado</th>
                 <th>Título</th>
                 <th>Status</th>
                 <th>Prioridade</th>
@@ -28,10 +28,13 @@
         <tbody>
             {% for chamado in chamados %}
             <tr class="clickable-row" data-href="{% url 'chamados:detail' chamado.pk %}">
-                <td class="ps-3">#{{ chamado.pk }}</td>
+                <td class="ps-3 text-nowrap">{{ chamado.codigo }}</td>
                 <td>
                     <span class="hd-truncate" title="{{ chamado.titulo }}">{{ chamado.titulo }}</span>
-                    {% if chamado.categoria %}<div class="small text-muted-hd hd-truncate d-block" title="{{ chamado.categoria }}">{{ chamado.categoria }}</div>{% endif %}
+                    <div class="small text-muted-hd hd-truncate d-block" title="{{ chamado.get_tipo_display }}{% if chamado.categoria %} · {{ chamado.categoria }}{% endif %}">
+                        {% if chamado.tipo == 'requisicao' %}<i class="bi bi-clipboard-check"></i>{% else %}<i class="bi bi-exclamation-diamond"></i>{% endif %}
+                        {{ chamado.get_tipo_display }}{% if chamado.categoria %} · {{ chamado.categoria }}{% endif %}
+                    </div>
                 </td>
                 <td><span class="badge rounded-pill {{ chamado.status|status_badge }}">{{ chamado.get_status_display }}</span></td>
                 <td><span class="badge rounded-pill {{ chamado.prioridade|prioridade_badge }}">{{ chamado.get_prioridade_display }}</span></td>

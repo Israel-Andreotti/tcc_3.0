@@ -1,0 +1,521 @@
+{% extends 'base.html' %}
+{% load chamado_extras %}
+{% block title %}Indicadores{% endblock %}
+{% block content %}
+<style>
+    /* Paleta dos gráficos (tokens por papel): série 1 azul, série 2 laranja; grade e texto recessivos. */
+    .viz-root {
+        --series-1: #2a78d6;
+        --series-2: #eb6834;
+        /* Escala divergente da satisfação: vermelho (insatisfeito) - cinza (neutro) - azul (satisfeito). */
+        --nota-1: #e34948;
+        --nota-2: #f19c9b;
+        --nota-3: #8f8e87;
+        --nota-4: #86b6ef;
+        --nota-5: #2a78d6;
+        --viz-grid: #e5e7eb;
+        --viz-texto: #52514e;
+    }
+    .hd-kpi { height: 100%; }
+    .hd-kpi .hd-kpi-rotulo { font-size: .8rem; color: var(--hd-text-muted); text-transform: uppercase; letter-spacing: .02em; }
+    .hd-kpi .hd-kpi-valor { font-size: 1.75rem; font-weight: 700; line-height: 1.2; color: var(--hd-text); }
+    .hd-kpi .hd-kpi-legenda { font-size: .8rem; color: var(--hd-text-muted); }
+    .hd-grafico { position: relative; height: 280px; }
+</style>
+
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <h1 class="h3 m-0"><i class="bi bi-graph-up"></i> Indicadores</h1>
+    {% if pode_ver_executiva %}
+    <ul class="nav nav-pills">
+        <li class="nav-item">
+            <a class="nav-link{% if visao == 'executiva' %} active{% endif %}" href="?visao=executiva&periodo={{ filtros.periodo }}&tecnico={{ filtros.tecnico_id|default:'' }}&setor={{ filtros.setor_id|default:'' }}&categoria={{ filtros.categoria_id|default:'' }}&tipo={{ filtros.tipo|default:'' }}">
+                <i class="bi bi-bar-chart-line"></i> Visão executiva
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link{% if visao == 'operacional' %} active{% endif %}" href="?visao=operacional&tecnico={{ filtros.tecnico_id|default:'' }}&setor={{ filtros.setor_id|default:'' }}&categoria={{ filtros.categoria_id|default:'' }}&tipo={{ filtros.tipo|default:'' }}">
+                <i class="bi bi-list-check"></i> Visão operacional
+            </a>
+        </li>
+    </ul>
+    {% endif %}
+</div>
+
+{# Filtros: uma linha, acima de tudo. Na visão operacional (situação atual) o período não se aplica. #}
+<form method="get" class="hd-card mb-3 d-flex flex-wrap gap-2 align-items-end">
+    <input type="hidden" name="visao" value="{{ visao }}">
+    {% if visao == 'executiva' %}
+    <div>
+        <label class="form-label small text-muted-hd mb-1" for="filtroPeriodo">Período</label>
+        <select name="periodo" id="filtroPeriodo" class="form-select" onchange="hdPeriodo(this)">
+            {% for valor, rotulo in periodos %}
+            <option value="{{ valor }}" {% if filtros.periodo == valor %}selected{% endif %}>{{ rotulo }}</option>
+            {% endfor %}
+            <option value="personalizado" {% if filtros.periodo == 'personalizado' %}selected{% endif %}>Personalizado</option>
+        </select>
+    </div>
+    <div id="filtroDatas" class="d-flex gap-2{% if filtros.periodo != 'personalizado' %} d-none{% endif %}">
+        <div>
+            <label class="form-label small text-muted-hd mb-1" for="filtroDe">De</label>
+            <input type="date" name="de" id="filtroDe" class="form-control" value="{{ filtros.inicio|date:'Y-m-d' }}">
+        </div>
+        <div>
+            <label class="form-label small text-muted-hd mb-1" for="filtroAte">Até</label>
+            <input type="date" name="ate" id="filtroAte" class="form-control" value="{{ filtros.fim|date:'Y-m-d' }}">
+        </div>
+    </div>
+    {% endif %}
+    <div>
+        <label class="form-label small text-muted-hd mb-1" for="filtroTecnico">Técnico</label>
+        <select name="tecnico" id="filtroTecnico" class="form-select">
+            <option value="">Todos</option>
+            {% for t in tecnicos %}
+            <option value="{{ t.pk }}" {% if filtros.tecnico_id == t.pk %}selected{% endif %}>{{ t.get_full_name|default:t.username }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div>
+        <label class="form-label small text-muted-hd mb-1" for="filtroSetor">Departamento solicitante</label>
+        <select name="setor" id="filtroSetor" class="form-select">
+            <option value="">Todos</option>
+            {% for s in setores %}
+            <option value="{{ s.pk }}" {% if filtros.setor_id == s.pk %}selected{% endif %}>{{ s.nome }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div>
+        <label class="form-label small text-muted-hd mb-1" for="filtroCategoria">Categoria</label>
+        <select name="categoria" id="filtroCategoria" class="form-select">
+            <option value="">Todos</option>
+            {% for c in categorias %}
+            <option value="{{ c.pk }}" {% if filtros.categoria_id == c.pk %}selected{% endif %}>{{ c.nome }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div>
+        <label class="form-label small text-muted-hd mb-1" for="filtroTipo">Tipo</label>
+        <select name="tipo" id="filtroTipo" class="form-select">
+            <option value="">Incidentes e requisições</option>
+            {% for valor, rotulo in tipos %}
+            <option value="{{ valor }}" {% if filtros.tipo == valor %}selected{% endif %}>{{ rotulo }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary"><i class="bi bi-funnel"></i> Aplicar</button>
+        <a href="?visao={{ visao }}" class="btn btn-outline-secondary">Limpar</a>
+    </div>
+</form>
+
+{% if visao == 'executiva' %}
+{# ============================== VISÃO EXECUTIVA ============================== #}
+<p class="text-muted-hd small mb-3">
+    {{ filtros.inicio|date:'d/m/Y' }} a {{ filtros.fim|date:'d/m/Y' }} ·
+    volume pela data de abertura; tempos, nível de serviço, reabertura e CSAT pela data de resolução.
+</p>
+
+<div class="row g-3 mb-4">
+    <div class="col-6 col-md-4 col-xl-3">
+        <div class="hd-card hd-kpi">
+            <div class="hd-kpi-rotulo">Total de chamados</div>
+            <div class="hd-kpi-valor">{{ dados.total_chamados }}</div>
+            <div class="hd-kpi-legenda">{{ dados.total_resolvidos }} resolvido{{ dados.total_resolvidos|pluralize }} no período</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-4 col-xl-3">
+        <div class="hd-card hd-kpi" title="Resolvidos dentro do prazo de SLA / resolvidos com prazo medido">
+            <div class="hd-kpi-rotulo">Nível de serviço (SLA)</div>
+            <div class="hd-kpi-valor">{% if dados.nivel_servico is not None %}{{ dados.nivel_servico }}%{% else %}—{% endif %}</div>
+            <div class="hd-kpi-legenda">resolvidos dentro do prazo · base {{ dados.nivel_servico_base }}</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-4 col-xl-3">
+        <div class="hd-card hd-kpi" title="Avaliações 4 ou 5 / total de avaliações (nota de 1 a 5 ao confirmar a solução)">
+            <div class="hd-kpi-rotulo">CSAT (satisfação)</div>
+            <div class="hd-kpi-valor">{% if dados.csat is not None %}{{ dados.csat }}%{% else %}—{% endif %}</div>
+            <div class="hd-kpi-legenda">{% if dados.csat_media %}média {{ dados.csat_media|floatformat:1 }} de 5 · {% endif %}{{ dados.csat_base }} avaliação{{ dados.csat_base|pluralize:"ões" }}</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-4 col-xl-3">
+        <div class="hd-card hd-kpi" title="Resolvidos sem reabertura e sem pedir informação ao solicitante / resolvidos">
+            <div class="hd-kpi-rotulo">Resolução no 1º contato</div>
+            <div class="hd-kpi-valor">{% if dados.primeiro_contato is not None %}{{ dados.primeiro_contato }}%{% else %}—{% endif %}</div>
+            <div class="hd-kpi-legenda">sem reabertura nem pedido de informação</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-4 col-xl-3">
+        <div class="hd-card hd-kpi" title="Abertura até o primeiro registro público da equipe">
+            <div class="hd-kpi-rotulo">Primeira resposta (FTR)</div>
+            <div class="hd-kpi-valor">{{ dados.ftr|duracao }}</div>
+            <div class="hd-kpi-legenda">tempo médio até a 1ª resposta</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-4 col-xl-3">
+        <div class="hd-card hd-kpi" title="Primeira atribuição a um técnico até a resolução">
+            <div class="hd-kpi-rotulo">Tempo médio de atendimento</div>
+            <div class="hd-kpi-valor">{{ dados.tempo_atendimento|duracao }}</div>
+            <div class="hd-kpi-legenda">da atribuição à resolução</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-4 col-xl-3">
+        <div class="hd-card hd-kpi" title="Abertura até a resolução">
+            <div class="hd-kpi-rotulo">Tempo médio de resolução</div>
+            <div class="hd-kpi-valor">{{ dados.tempo_resolucao|duracao }}</div>
+            <div class="hd-kpi-legenda">da abertura à resolução</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-4 col-xl-3">
+        <div class="hd-card hd-kpi" title="Resolvidos que já foram reabertos pelo solicitante / resolvidos">
+            <div class="hd-kpi-rotulo">Taxa de reabertura</div>
+            <div class="hd-kpi-valor">{% if dados.reabertura is not None %}{{ dados.reabertura }}%{% else %}—{% endif %}</div>
+            <div class="hd-kpi-legenda">soluções recusadas pelo solicitante</div>
+        </div>
+    </div>
+</div>
+
+<div class="viz-root">
+    <div class="hd-card mb-4">
+        <h2 class="h6 mb-3">Volume de chamados — abertos × resolvidos {% if dados.volume.por_mes %}por mês{% else %}por dia{% endif %}</h2>
+        <div class="hd-grafico"><canvas id="graficoVolume" role="img" aria-label="Chamados abertos e resolvidos ao longo do período"></canvas></div>
+        <details class="mt-2 small">
+            <summary class="text-muted-hd">Ver tabela</summary>
+            <table class="table table-sm mt-2 mb-0">
+                <thead><tr><th>{% if dados.volume.por_mes %}Mês{% else %}Dia{% endif %}</th><th class="text-end">Abertos</th><th class="text-end">Resolvidos</th></tr></thead>
+                <tbody>
+                    {% for rotulo, abertos, resolvidos in dados.volume.linhas %}
+                    <tr><td>{{ rotulo }}</td><td class="text-end">{{ abertos }}</td><td class="text-end">{{ resolvidos }}</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </details>
+    </div>
+
+    <div class="hd-card p-0 table-responsive mb-4">
+        <div class="px-3 pt-3">
+            <h2 class="h6 mb-1">Incidentes × requisições de serviço</h2>
+            <p class="small text-muted-hd mb-2">Incidente: algo parou ou degradou. Requisição: pedido de algo padrão (acesso, instalação, material).</p>
+        </div>
+        <table class="table hd-table align-middle mb-0">
+            <thead>
+                <tr>
+                    <th class="ps-3">Tipo</th>
+                    <th class="text-end">Abertos</th>
+                    <th class="text-end">Resolvidos</th>
+                    <th class="text-end">Nível de serviço</th>
+                    <th class="pe-3 text-end">Tempo médio de resolução</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for t in dados.por_tipo %}
+                <tr>
+                    <td class="ps-3">{% tipo_badge t.tipo t.rotulo %}</td>
+                    <td class="text-end">{{ t.abertos }}</td>
+                    <td class="text-end">{{ t.resolvidos }}</td>
+                    <td class="text-end">{% if t.nivel_servico is not None %}{{ t.nivel_servico }}%{% else %}—{% endif %}</td>
+                    <td class="pe-3 text-end">{{ t.tempo_resolucao|duracao }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="hd-card mb-4">
+        <h2 class="h6 mb-1">Satisfação dos solicitantes</h2>
+        <p class="small text-muted-hd mb-3">
+            {{ dados.csat_base }} avaliação{{ dados.csat_base|pluralize:"ões" }} no período ·
+            CSAT = satisfeitos (notas 4 e 5) ÷ total de avaliações.
+        </p>
+        {% if dados.csat_base %}
+        <div class="row g-3 align-items-center">
+            <div class="col-md-4">
+                {% for g in dados.satisfacao_grupos %}
+                <div class="d-flex justify-content-between align-items-baseline py-2{% if not forloop.last %} border-bottom{% endif %}">
+                    <div>
+                        <div class="fw-semibold">{{ g.grupo }}</div>
+                        <div class="small text-muted-hd">notas {{ g.notas }} · {{ g.total }} avaliação{{ g.total|pluralize:"ões" }}</div>
+                    </div>
+                    <div class="fs-4 fw-bold">{{ g.percentual }}%</div>
+                </div>
+                {% endfor %}
+            </div>
+            <div class="col-md-8">
+                <div class="hd-grafico" style="height: 220px;"><canvas id="graficoSatisfacao" role="img" aria-label="Avaliações por nota, de muito satisfeito a muito insatisfeito"></canvas></div>
+            </div>
+        </div>
+        <details class="mt-2 small">
+            <summary class="text-muted-hd">Ver tabela</summary>
+            <table class="table table-sm mt-2 mb-0">
+                <thead><tr><th>Nota</th><th>Classificação</th><th class="text-end">Avaliações</th><th class="text-end">%</th></tr></thead>
+                <tbody>
+                    {% for n in dados.avaliacoes_por_nota %}
+                    <tr><td>{{ n.nota }} ★</td><td>{{ n.rotulo }}</td><td class="text-end">{{ n.total }}</td><td class="text-end">{{ n.percentual }}%</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </details>
+        {% else %}
+        <p class="text-muted-hd mb-0">Nenhuma avaliação no período.</p>
+        {% endif %}
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-lg-4">
+            <div class="hd-card h-100">
+                <h2 class="h6 mb-3">Chamados por prioridade</h2>
+                <div class="hd-grafico" style="height: 220px;"><canvas id="graficoPrioridade" role="img" aria-label="Chamados por prioridade"></canvas></div>
+            </div>
+        </div>
+        <div class="col-lg-8">
+            <div class="hd-card h-100">
+                <h2 class="h6 mb-3">Chamados por categoria (tipo de incidente)</h2>
+                {% if dados.por_categoria %}
+                <div class="hd-grafico" style="height: 220px;"><canvas id="graficoCategoria" role="img" aria-label="Chamados por categoria"></canvas></div>
+                {% else %}<p class="text-muted-hd mb-0">Sem chamados no período.</p>{% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="hd-card mb-4">
+        <h2 class="h6 mb-1">Chamados por setor (departamento solicitante)</h2>
+        <p class="small text-muted-hd mb-3"><i class="bi bi-exclamation-triangle-fill text-danger"></i> = setor crítico (prioridade elevada em um nível)</p>
+        {% if dados.por_setor %}
+        <div class="hd-grafico"><canvas id="graficoSetor" role="img" aria-label="Chamados por setor"></canvas></div>
+        {% else %}<p class="text-muted-hd mb-0">Sem chamados no período.</p>{% endif %}
+    </div>
+</div>
+
+<div class="hd-card p-0 table-responsive mb-4">
+    <div class="px-3 pt-3"><h2 class="h6 mb-2">Desempenho por técnico (resolvidos no período)</h2></div>
+    <table class="table hd-table align-middle mb-0">
+        <thead>
+            <tr>
+                <th class="ps-3">Técnico</th>
+                <th class="text-end">Resolvidos</th>
+                <th class="text-end">Nível de serviço</th>
+                <th class="text-end">Taxa de reabertura</th>
+                <th class="text-end">Tempo médio de resolução</th>
+                <th class="pe-3 text-end">CSAT médio</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for t in dados.por_tecnico %}
+            <tr>
+                <td class="ps-3">{{ t.nome }}</td>
+                <td class="text-end">{{ t.resolvidos }}</td>
+                <td class="text-end">{% if t.nivel_servico is not None %}{{ t.nivel_servico }}%{% else %}—{% endif %}</td>
+                <td class="text-end">{% if t.reabertura is not None %}{{ t.reabertura }}%{% else %}—{% endif %}</td>
+                <td class="text-end">{{ t.tempo_medio|duracao }}</td>
+                <td class="pe-3 text-end">{% if t.csat_media %}{{ t.csat_media|floatformat:1 }} / 5{% else %}—{% endif %}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="6" class="text-center text-muted-hd py-4">Nenhum chamado resolvido no período.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{{ dados.volume|json_script:"dadosVolume" }}
+{{ dados.por_categoria|json_script:"dadosCategoria" }}
+{{ dados.por_setor|json_script:"dadosSetor" }}
+{{ dados.por_prioridade|json_script:"dadosPrioridade" }}
+{{ dados.avaliacoes_por_nota|json_script:"dadosSatisfacao" }}
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    if (!window.Chart) return;
+    var css = getComputedStyle(document.querySelector('.viz-root'));
+    var cor = function (nome) { return css.getPropertyValue(nome).trim(); };
+    var ler = function (id) { return JSON.parse(document.getElementById(id).textContent); };
+
+    Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
+    Chart.defaults.color = cor('--viz-texto');
+    Chart.defaults.borderColor = cor('--viz-grid');
+
+    var eixoInteiro = { beginAtZero: true, ticks: { precision: 0 }, grid: { color: cor('--viz-grid') } };
+
+    // Linha: abertos x resolvidos (2 séries, legenda + crosshair/tooltip por índice).
+    var volume = ler('dadosVolume');
+    new Chart(document.getElementById('graficoVolume'), {
+        type: 'line',
+        data: {
+            labels: volume.rotulos,
+            datasets: [
+                { label: 'Abertos', data: volume.abertos, borderColor: cor('--series-1'), backgroundColor: cor('--series-1'),
+                  borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, tension: 0.25 },
+                { label: 'Resolvidos', data: volume.resolvidos, borderColor: cor('--series-2'), backgroundColor: cor('--series-2'),
+                  borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, tension: 0.25 }
+            ]
+        },
+        options: {
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: { legend: { position: 'top', align: 'end', labels: { boxWidth: 12, boxHeight: 2 } } },
+            scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 12 } }, y: eixoInteiro }
+        }
+    });
+
+    // Barras horizontais de série única (uma cor, sem legenda: o título nomeia a série).
+    function barras(id, rotulos, valores, nomeValor) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        new Chart(el, {
+            type: 'bar',
+            data: { labels: rotulos, datasets: [{ label: nomeValor, data: valores, backgroundColor: cor('--series-1'),
+                    borderRadius: 4, borderSkipped: 'start', maxBarThickness: 18 }] },
+            options: {
+                indexAxis: 'y',
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: { x: eixoInteiro, y: { grid: { display: false } } }
+            }
+        });
+    }
+
+    var prioridade = ler('dadosPrioridade');
+    barras('graficoPrioridade', prioridade.map(function (p) { return p.nome; }),
+           prioridade.map(function (p) { return p.total; }), 'Chamados');
+
+    var categoria = ler('dadosCategoria');
+    barras('graficoCategoria', categoria.map(function (c) { return c.nome || 'Sem categoria'; }),
+           categoria.map(function (c) { return c.total; }), 'Chamados');
+
+    // Satisfação: barras horizontais com escala divergente (cor por nota) e o nome da nota no eixo.
+    var satisfacao = ler('dadosSatisfacao');
+    var elSatisfacao = document.getElementById('graficoSatisfacao');
+    if (elSatisfacao) {
+        new Chart(elSatisfacao, {
+            type: 'bar',
+            data: {
+                labels: satisfacao.map(function (n) { return n.nota + '★ ' + n.rotulo; }),
+                datasets: [{ label: 'Avaliações', data: satisfacao.map(function (n) { return n.total; }),
+                             backgroundColor: satisfacao.map(function (n) { return cor('--nota-' + n.nota); }),
+                             borderRadius: 4, borderSkipped: 'start', maxBarThickness: 18 }]
+            },
+            options: {
+                indexAxis: 'y',
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { callbacks: { label: function (ctx) {
+                        var n = satisfacao[ctx.dataIndex];
+                        return n.total + ' avaliação(ões) · ' + (n.percentual || 0) + '%';
+                    } } }
+                },
+                scales: { x: eixoInteiro, y: { grid: { display: false } } }
+            }
+        });
+    }
+
+    var setor = ler('dadosSetor');
+    barras('graficoSetor', setor.map(function (s) { return (s.critico ? '⚠ ' : '') + (s.nome || 'Sem setor'); }),
+           setor.map(function (s) { return s.total; }), 'Chamados');
+});
+
+function hdPeriodo(select) {
+    document.getElementById('filtroDatas').classList.toggle('d-none', select.value !== 'personalizado');
+    if (select.value !== 'personalizado') select.form.submit();
+}
+</script>
+
+{% else %}
+{# ============================== VISÃO OPERACIONAL ============================== #}
+<p class="text-muted-hd small mb-3">Situação da fila agora · atualizada ao abrir a página.</p>
+
+<div class="row g-3 mb-4">
+    <div class="col-6 col-md-4 col-xl">
+        <div class="hd-card hd-kpi"><div class="hd-kpi-rotulo">Em aberto</div><div class="hd-kpi-valor">{{ dados.em_aberto }}</div><div class="hd-kpi-legenda">chamados não resolvidos</div></div>
+    </div>
+    <div class="col-6 col-md-4 col-xl">
+        <div class="hd-card hd-kpi"><div class="hd-kpi-rotulo">Sem atribuição</div><div class="hd-kpi-valor">{{ dados.sem_atribuicao }}</div><div class="hd-kpi-legenda">aguardando um técnico</div></div>
+    </div>
+    <div class="col-6 col-md-4 col-xl">
+        <div class="hd-card hd-kpi"><div class="hd-kpi-rotulo"><i class="bi bi-exclamation-octagon-fill text-danger"></i> SLA estourado</div><div class="hd-kpi-valor">{{ dados.estourados }}</div><div class="hd-kpi-legenda">em aberto e fora do prazo</div></div>
+    </div>
+    <div class="col-6 col-md-4 col-xl">
+        <div class="hd-card hd-kpi"><div class="hd-kpi-rotulo">Aguardando solicitante</div><div class="hd-kpi-valor">{{ dados.aguardando_solicitante }}</div><div class="hd-kpi-legenda">SLA pausado</div></div>
+    </div>
+    <div class="col-6 col-md-4 col-xl">
+        <div class="hd-card hd-kpi"><div class="hd-kpi-rotulo">Aguardando confirmação</div><div class="hd-kpi-valor">{{ dados.aguardando_confirmacao }}</div><div class="hd-kpi-legenda">resolvidos sem resposta</div></div>
+    </div>
+</div>
+
+<div class="hd-card p-0 table-responsive mb-4">
+    <div class="px-3 pt-3"><h2 class="h6 mb-2">Fila sem atribuição <span class="text-muted-hd fw-normal">(mais urgentes primeiro)</span></h2></div>
+    <table class="table hd-table table-hover align-middle mb-0">
+        <thead><tr><th class="ps-3">Prioridade</th><th>Chamado</th><th>Setor</th><th>Aberto há</th><th class="pe-3">Prazo SLA</th></tr></thead>
+        <tbody>
+            {% for ch in dados.fila_sem_atribuicao %}
+            <tr class="clickable-row" data-href="{% url 'chamados:detail' ch.pk %}">
+                <td class="ps-3"><span class="badge rounded-pill {{ ch.prioridade|prioridade_badge }}">{{ ch.get_prioridade_display }}</span></td>
+                <td><span class="text-muted-hd text-nowrap">{{ ch.codigo }}</span> {{ ch.titulo }}</td>
+                <td>{% if ch.setor.critico %}<i class="bi bi-exclamation-triangle-fill text-danger" title="Setor crítico"></i> {% endif %}{{ ch.setor|default:'—' }}</td>
+                <td>{{ ch.criado_em|timesince }}</td>
+                <td class="pe-3">{% if ch.sla_estourado %}<span class="text-danger"><i class="bi bi-exclamation-octagon-fill"></i> {{ ch.sla_tempo_restante_display }}</span>{% else %}{{ ch.sla_tempo_restante_display }}{% endif %}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="5" class="text-center text-muted-hd py-4">Nenhum chamado aguardando atribuição. 🎉</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="hd-card p-0 table-responsive mb-4">
+    <div class="px-3 pt-3"><h2 class="h6 mb-2">Carga por técnico</h2></div>
+    <table class="table hd-table align-middle mb-0">
+        <thead>
+            <tr>
+                <th class="ps-3">Técnico</th>
+                <th class="text-end">Em aberto</th>
+                <th class="text-end">Em andamento</th>
+                <th class="text-end">Aguardando solicitante</th>
+                <th class="text-end">SLA estourado</th>
+                <th class="pe-3 text-end" title="Em andamento sem nenhuma atualização há mais de {{ dados.horas_parado }}h">Parados há +{{ dados.horas_parado }}h</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for t in dados.por_tecnico %}
+            <tr>
+                <td class="ps-3">{{ t.nome }}</td>
+                <td class="text-end">{{ t.total }}</td>
+                <td class="text-end">{{ t.em_andamento }}</td>
+                <td class="text-end">{{ t.aguardando }}</td>
+                <td class="text-end">{% if t.estourados %}<span class="text-danger fw-semibold"><i class="bi bi-exclamation-octagon-fill"></i> {{ t.estourados }}</span>{% else %}0{% endif %}</td>
+                <td class="pe-3 text-end">{% if t.parados %}<span class="text-warning-emphasis fw-semibold"><i class="bi bi-hourglass-split"></i> {{ t.parados }}</span>{% else %}0{% endif %}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="6" class="text-center text-muted-hd py-4">Nenhum chamado atribuído em aberto.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="hd-card p-0 table-responsive mb-4">
+    <div class="px-3 pt-3">
+        <h2 class="h6 mb-1">Chamados travados por analista</h2>
+        <p class="small text-muted-hd mb-2">Atribuídos e com SLA estourado ou em andamento sem atualização há mais de {{ dados.horas_parado }}h.</p>
+    </div>
+    <table class="table hd-table table-hover align-middle mb-0">
+        <thead><tr><th class="ps-3">Técnico</th><th>Chamado</th><th>Situação</th><th>Última atualização</th><th class="pe-3">Prazo SLA</th></tr></thead>
+        <tbody>
+            {% for ch in dados.travados %}
+            <tr class="clickable-row" data-href="{% url 'chamados:detail' ch.pk %}">
+                <td class="ps-3">{{ ch.atendente.get_full_name|default:ch.atendente.username }}</td>
+                <td><span class="text-muted-hd text-nowrap">{{ ch.codigo }}</span> {{ ch.titulo }}</td>
+                <td><span class="badge rounded-pill {{ ch.status|status_badge }}">{{ ch.get_status_display }}</span></td>
+                <td>há {{ ch.atualizado_em|timesince }}</td>
+                <td class="pe-3">{% if ch.sla_estourado %}<span class="text-danger"><i class="bi bi-exclamation-octagon-fill"></i> {{ ch.sla_tempo_restante_display }}</span>{% else %}{{ ch.sla_tempo_restante_display }}{% endif %}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="5" class="text-center text-muted-hd py-4">Nenhum chamado travado.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+<script>
+document.querySelectorAll('tr.clickable-row[data-href]').forEach(function (linha) {
+    linha.addEventListener('click', function () { window.location = linha.dataset.href; });
+});
+</script>
+{% endif %}
+{% endblock %}

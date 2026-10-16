@@ -154,6 +154,48 @@ body {
     color: var(--hd-text);
 }
 
+/* Tipo do chamado (ITIL): incidente x requisição de serviço — sempre com ícone e texto. */
+.badge.badge-tipo-incidente { background-color: #fef3c7; color: #92400e; }
+.badge.badge-tipo-requisicao { background-color: #e0f2fe; color: #075985; }
+
+/* Avaliação por estrelas: inputs em ordem 5..1 com row-reverse, para o hover/seleção pintar
+   a estrela escolhida e todas as anteriores (só CSS). */
+.hd-estrelas {
+    display: inline-flex;
+    flex-direction: row-reverse;
+    gap: .25rem;
+}
+
+.hd-estrelas input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.hd-estrelas label {
+    font-size: 2.25rem;
+    line-height: 1;
+    color: #d1d5db;
+    cursor: pointer;
+    transition: color .1s ease, transform .1s ease;
+}
+
+.hd-estrelas label:hover,
+.hd-estrelas label:hover ~ label,
+.hd-estrelas input:checked ~ label {
+    color: #f59e0b;
+}
+
+.hd-estrelas label:hover {
+    transform: scale(1.1);
+}
+
+.hd-estrelas input:focus-visible + label {
+    outline: 2px solid var(--hd-primary);
+    outline-offset: 2px;
+    border-radius: .25rem;
+}
+
 /* O Edge mostra um olho próprio nos campos de senha; esconde para ficar só o botão do sistema. */
 input[type="password"]::-ms-reveal,
 input[type="password"]::-ms-clear {
@@ -393,6 +435,18 @@ input[type="password"]::-ms-clear {
 .hd-timeline-marker.marker-interno {
     border-color: #a855f7;
     color: #6d28d9;
+}
+
+.hd-timeline-marker.marker-evento {
+    border-color: var(--hd-border);
+    color: var(--hd-text-muted);
+    background: #f8fafc;
+}
+
+/* Eventos do ciclo de vida: mais compactos que os procedimentos. */
+.hd-timeline-item.hd-timeline-evento .hd-timeline-content {
+    padding-top: .3rem;
+    color: var(--hd-text-muted);
 }
 
 .hd-timeline-marker.marker-resposta {

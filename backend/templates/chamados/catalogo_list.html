@@ -66,6 +66,7 @@
             {% for sub in categoria.subcategorias.all %}
             <li class="d-flex flex-wrap align-items-center gap-2 py-1 hd-catalogo-subcategoria{% if not forloop.last %} border-bottom{% endif %}" data-nome-sub="{{ sub.nome|lower }}">
                 <span class="flex-grow-1">{{ sub.nome }}</span>
+                {% tipo_badge sub.tipo %}
                 <span class="badge rounded-pill {{ sub.prioridade|prioridade_badge }}">{{ sub.get_prioridade_display }}</span>
             </li>
             {% endfor %}

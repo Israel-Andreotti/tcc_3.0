@@ -1,11 +1,12 @@
 {% extends 'base.html' %}
 {% load chamado_extras %}
-{% block title %}Chamado #{{ chamado.pk }}{% endblock %}
+{% block title %}{{ chamado.codigo }}{% endblock %}
 {% block content %}
 <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
     <div>
         <a href="{% url 'chamados:list' %}" class="text-decoration-none small text-muted-hd"><i class="bi bi-arrow-left"></i> Voltar</a>
-        <h1 class="h3 mb-2 mt-1"><span class="hd-ticket-id">#{{ chamado.pk }}</span> {{ chamado.titulo }}</h1>
+        <h1 class="h3 mb-2 mt-1"><span class="hd-ticket-id">{{ chamado.codigo }}</span> {{ chamado.titulo }}</h1>
+        {% tipo_badge chamado.tipo %}
         <span class="badge rounded-pill {{ chamado.status|status_badge }}">{{ chamado.get_status_display }}</span>
         <span class="badge rounded-pill {{ chamado.prioridade|prioridade_badge }}">{{ chamado.get_prioridade_display }}</span>
         {% if chamado.sla_estourado %}<span class="badge rounded-pill bg-danger text-white"><i class="bi bi-exclamation-triangle-fill"></i> SLA estourado</span>{% endif %}
@@ -132,6 +133,63 @@
 </div>
 {% endif %}
 
+{% if pode_avaliar %}
+<div class="hd-card mb-4 border border-warning d-flex flex-wrap justify-content-between align-items-center gap-2">
+    <div>
+        <div class="fw-semibold"><i class="bi bi-star-fill text-warning"></i> Como foi o atendimento?</div>
+        <div class="small text-muted-hd">Sua avaliação ajuda a melhorar o suporte. Leva poucos segundos.</div>
+    </div>
+    <button type="button" class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#avaliacaoModal">Avaliar atendimento</button>
+</div>
+
+<div class="modal fade" id="avaliacaoModal" tabindex="-1" aria-labelledby="avaliacaoTitulo" aria-hidden="true"
+     {% if abrir_avaliacao %}data-abrir="1"{% endif %}>
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <form method="post" action="{% url 'chamados:avaliar' chamado.pk %}">
+                {% csrf_token %}
+                <div class="modal-header">
+                    <h2 class="modal-title h5" id="avaliacaoTitulo"><i class="bi bi-star-fill text-warning"></i> Avalie o atendimento</h2>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-2">Como foi o atendimento do chamado <strong>{{ chamado.codigo }} — {{ chamado.titulo }}</strong>?</p>
+                    <div class="hd-estrelas mb-1" role="radiogroup" aria-label="Nota de 1 a 5 estrelas">
+                        {% for nota in '54321' %}
+                        <input type="radio" name="avaliacao" id="estrela{{ nota }}" value="{{ nota }}" required>
+                        <label for="estrela{{ nota }}" title="{{ nota }} de 5"><i class="bi bi-star-fill"></i></label>
+                        {% endfor %}
+                    </div>
+                    <div class="small text-muted-hd mb-3" id="estrelaLegenda">Escolha de 1 a 5 estrelas.</div>
+                    <label class="form-label" for="avaliacaoComentario">Comentário <span class="text-muted-hd small">(opcional)</span></label>
+                    <textarea name="comentario" id="avaliacaoComentario" class="form-control" rows="3" maxlength="500"
+                              placeholder="O que foi bom ou o que poderia melhorar?"></textarea>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Agora não</button>
+                    <button type="submit" class="btn btn-warning"><i class="bi bi-send"></i> Enviar avaliação</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var modal = document.getElementById('avaliacaoModal');
+    if (!modal) return;
+    // Abre sozinho logo depois de o solicitante confirmar a solução.
+    if (modal.dataset.abrir === '1' && window.bootstrap) bootstrap.Modal.getOrCreateInstance(modal).show();
+    var textos = {1: 'Muito insatisfeito', 2: 'Insatisfeito', 3: 'Neutro', 4: 'Satisfeito', 5: 'Muito satisfeito'};
+    modal.querySelectorAll('input[name="avaliacao"]').forEach(function (opcao) {
+        opcao.addEventListener('change', function () {
+            document.getElementById('estrelaLegenda').textContent = opcao.value + ' de 5 — ' + textos[opcao.value];
+        });
+    });
+});
+</script>
+{% endif %}
+
 {% if pode_confirmar %}
 <div class="hd-card mb-4 border border-2 border-success">
     <h2 class="h6 text-uppercase text-success mb-2"><i class="bi bi-patch-check-fill"></i> O técnico marcou este chamado como resolvido</h2>
@@ -160,9 +218,20 @@
 {% endif %}
 
 <div class="hd-card mb-4">
-    <h2 class="h6 text-uppercase text-muted-hd mb-3">Procedimento</h2>
+    <h2 class="h6 text-uppercase text-muted-hd mb-3">Linha do tempo</h2>
     <ul class="hd-timeline">
-        {% for entrada in procedimentos %}
+        {% for tipo_item, entrada in linha_do_tempo %}
+        {% if tipo_item == 'evento' %}
+        <li class="hd-timeline-item hd-timeline-evento">
+            <div class="hd-timeline-marker marker-evento"><i class="bi {{ entrada.icone }}"></i></div>
+            <div class="hd-timeline-content small">
+                <span class="fw-semibold">{{ entrada.autor_display }}</span>
+                {{ entrada.descricao|lower|slice:":1" }}{{ entrada.descricao|slice:"1:" }}
+                {% if not entrada.publico %}<span class="badge rounded-pill status-aguardando ms-1" title="Visível só para a equipe">interno</span>{% endif %}
+                <span class="text-muted-hd ms-1">&middot; {{ entrada.criado_em|date:'d/m/Y H:i' }}</span>
+            </div>
+        </li>
+        {% else %}
         <li class="hd-timeline-item">
             <div class="hd-timeline-marker marker-{{ entrada.tipo }}">
                 {% if entrada.tipo == 'interno' %}<i class="bi bi-eye-slash"></i>{% elif entrada.tipo == 'resposta' %}<i class="bi bi-reply-fill"></i>{% else %}<i class="bi bi-check2-circle"></i>{% endif %}
@@ -181,8 +250,9 @@
                 <div>{{ entrada.texto|linebreaks }}</div>
             </div>
         </li>
+        {% endif %}
         {% empty %}
-        <li class="text-muted-hd">Nenhum procedimento registrado ainda.</li>
+        <li class="text-muted-hd">Nenhum registro ainda.</li>
         {% endfor %}
     </ul>
 
@@ -356,7 +426,7 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
             </div>
             <div class="modal-body">
-                <p class="mb-0">Marcar o chamado <strong>#{{ chamado.pk }}</strong> como resolvido? Essa ação encerra o atendimento.</p>
+                <p class="mb-0">Marcar o chamado <strong>{{ chamado.codigo }}</strong> como resolvido? Essa ação encerra o atendimento.</p>
                 {% if movimentacoes_pendentes %}
                 <p class="mb-0 mt-2 small text-muted-hd"><i class="bi bi-hourglass-split"></i> {{ movimentacoes_pendentes|length }} movimentação(ões) de ativo pendente(s) será(ão) efetivada(s) junto.</p>
                 {% endif %}

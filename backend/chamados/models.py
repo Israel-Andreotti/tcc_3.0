@@ -1,7 +1,7 @@
 from datetime import timedelta
 
 from django.conf import settings
-from django.db import models
+from django.db import connection, models
 from django.utils import timezone
 
 
@@ -10,6 +10,32 @@ class Prioridade(models.TextChoices):
     MEDIA = 'media', 'Média'
     ALTA = 'alta', 'Alta'
     CRITICA = 'critica', 'Crítica'
+
+
+class TipoChamado(models.TextChoices):
+    """ITIL: incidente = interrupção ou degradação de um serviço ("a internet caiu");
+    requisição de serviço = pedido de algo padrão e previsto ("instalar o leitor de PDF")."""
+
+    INCIDENTE = 'incidente', 'Incidente'
+    REQUISICAO = 'requisicao', 'Requisição'
+
+
+# Código de exibição do chamado: prefixo do tipo + número sequencial próprio de cada tipo
+# (INC000001, REQ000001...). Os números vêm de sequências do PostgreSQL (criadas na migration
+# 0021), seguras para aberturas simultâneas. O id interno (pk) continua sendo usado em URLs e FKs.
+PREFIXO_CODIGO = {TipoChamado.INCIDENTE: 'INC', TipoChamado.REQUISICAO: 'REQ'}
+SEQUENCIA_CODIGO = {TipoChamado.INCIDENTE: 'chamados_codigo_inc_seq', TipoChamado.REQUISICAO: 'chamados_codigo_req_seq'}
+DIGITOS_CODIGO = 6
+
+
+def formatar_codigo(tipo, numero):
+    return f'{PREFIXO_CODIGO[tipo]}{numero:0{DIGITOS_CODIGO}d}'
+
+
+def proximo_codigo(tipo):
+    with connection.cursor() as cursor:
+        cursor.execute('SELECT nextval(%s)', [SEQUENCIA_CODIGO[tipo]])
+        return formatar_codigo(tipo, cursor.fetchone()[0])
 
 
 # Da menor para a maior: usado para subir um nível de prioridade.
@@ -44,6 +70,8 @@ class Subcategoria(models.Model):
     # Prioridade padrão de qualquer chamado aberto nessa subcategoria — é ela quem
     # define a prioridade do chamado, nenhum usuário escolhe isso manualmente.
     prioridade = models.CharField(max_length=10, choices=Prioridade.choices, default=Prioridade.MEDIA)
+    # Incidente ou requisição de serviço: herdado pelos chamados abertos nessa subcategoria.
+    tipo = models.CharField(max_length=10, choices=TipoChamado.choices, default=TipoChamado.INCIDENTE)
 
     class Meta:
         ordering = ['nome']
@@ -79,6 +107,7 @@ class Chamado(models.Model):
         FECHADO = 'fechado', 'Fechado'
 
     Prioridade = Prioridade
+    Tipo = TipoChamado
 
     # Prazo de SLA (em horas) por prioridade, usado para calcular `prazo_sla`.
     SLA_HORAS = {
@@ -91,13 +120,26 @@ class Chamado(models.Model):
     # Solicitantes marcados como VIP têm o prazo de SLA reduzido nesse percentual.
     VIP_SLA_MULTIPLICADOR = 0.75
 
+    # Avaliação do atendimento (1 a 5) -> classificação e grupo usados no pop-up, na linha do tempo e no CSAT.
+    CLASSIFICACAO_AVALIACAO = {
+        5: ('Muito satisfeito', 'satisfeitos'),
+        4: ('Satisfeito', 'satisfeitos'),
+        3: ('Neutro', 'neutros'),
+        2: ('Insatisfeito', 'insatisfeitos'),
+        1: ('Muito insatisfeito', 'insatisfeitos'),
+    }
+
     # Depois de resolvido, o solicitante tem esse prazo para confirmar a solução ou reabrir o
     # chamado; sem resposta, o chamado é fechado automaticamente (ver fechar_resolvidos_expirados).
-    DIAS_CONFIRMACAO = 3
+    DIAS_CONFIRMACAO = 1
 
     titulo = models.CharField(max_length=150)
     descricao = models.TextField()
     status = models.CharField(max_length=25, choices=Status.choices, default=Status.ABERTO)
+    # Incidente ou requisição: copiado da subcategoria na abertura (ver save()).
+    tipo = models.CharField(max_length=10, choices=TipoChamado.choices, default=TipoChamado.INCIDENTE)
+    # Código mostrado ao usuário (INC000001 / REQ000001), gerado na abertura conforme o tipo.
+    codigo = models.CharField(max_length=12, unique=True, editable=False)
     # Nunca definida por formulário de usuário: vem da subcategoria na abertura, um nível acima se o
     # setor do chamado for crítico (ver save() e prioridade_do_chamado).
     prioridade = models.CharField(max_length=10, choices=Prioridade.choices, default=Prioridade.MEDIA)
@@ -159,17 +201,34 @@ class Chamado(models.Model):
     # Quando o solicitante respondeu e o técnico responsável ainda não abriu o chamado (notificação).
     resposta_solicitante_em = models.DateTimeField(null=True, blank=True)
 
+    # ---- Dados para os indicadores de gestão (app indicadores) ----
+    # Primeira atribuição a um técnico (tempo médio de atendimento = atribuição -> resolução).
+    atribuido_em = models.DateTimeField(null=True, blank=True)
+    # Primeira comunicação pública da equipe com o solicitante (FTR = abertura -> primeira resposta).
+    primeira_resposta_em = models.DateTimeField(null=True, blank=True)
+    # A última resolução foi dentro do prazo de SLA? (nível de serviço)
+    resolvido_no_prazo = models.BooleanField(null=True, blank=True)
+    # Quantas vezes o solicitante disse que não foi resolvido (taxa de reabertura).
+    reaberturas = models.PositiveIntegerField(default=0)
+    # O técnico precisou pedir informação ao solicitante (não conta como resolução no primeiro contato).
+    pediu_info = models.BooleanField(default=False)
+    # Avaliação do solicitante ao confirmar a solução, de 1 a 5 (CSAT).
+    avaliacao = models.PositiveSmallIntegerField(null=True, blank=True)
+
     class Meta:
         ordering = ['-criado_em']
 
     def __str__(self):
-        return f'#{self.pk} {self.titulo}'
+        return f'{self.codigo} {self.titulo}'
 
     def save(self, *args, **kwargs):
         # Só na abertura: a prioridade da subcategoria pode mudar depois (catálogo), e o chamado
         # já aberto mantém a prioridade com que foi aberto — coerente com o prazo de SLA já calculado.
         if self._state.adding and self.subcategoria_id:
             self.prioridade = prioridade_do_chamado(self.subcategoria.prioridade, self.setor)
+            self.tipo = self.subcategoria.tipo
+        if not self.codigo:
+            self.codigo = proximo_codigo(self.tipo)
         if not self.prazo_sla:
             self.prazo_sla = timezone.now() + timedelta(hours=self.sla_horas_configurado())
         super().save(*args, **kwargs)
@@ -182,12 +241,35 @@ class Chamado(models.Model):
             horas *= self.VIP_SLA_MULTIPLICADOR
         return horas
 
+    # ---- Eventos do atendimento (também alimentam os indicadores) ----
+
+    def registrar_evento(self, tipo, autor, descricao, publico=True):
+        """Grava um evento no log do ciclo de vida (o chamado precisa já estar salvo)."""
+        return EventoChamado.objects.create(
+            chamado=self, tipo=tipo, autor=autor, descricao=descricao[:255], publico=publico
+        )
+
+    def atribuir(self, tecnico):
+        """Atribui o chamado a um técnico (pegar ou reatribuir). Não salva."""
+        self.atendente = tecnico
+        if self.atribuido_em is None:
+            self.atribuido_em = timezone.now()
+        if self.status == self.Status.ABERTO:
+            self.status = self.Status.EM_ANDAMENTO
+
+    def registrar_primeira_resposta(self):
+        """Marca a primeira comunicação pública da equipe com o solicitante. Não salva."""
+        if self.primeira_resposta_em is None:
+            self.primeira_resposta_em = timezone.now()
+
     # ---- Ciclo de encerramento: resolvido -> (confirmação do solicitante) -> fechado ----
 
     def resolver(self):
         """Técnico concluiu o atendimento. O SLA fica pausado enquanto aguarda a confirmação do
         solicitante: se ele reabrir, o relógio volta de onde parou. Não salva."""
         self.retomar_sla()  # fecha uma pausa anterior (aguardando solicitante), se houver
+        self.resolvido_no_prazo = bool(self.prazo_sla and timezone.now() <= self.prazo_sla)
+        self.registrar_primeira_resposta()  # resolver sem nenhum registro antes também é responder
         self.pausar_sla()
         self.status = self.Status.RESOLVIDO
         self.resolvido_em = timezone.now()
@@ -204,7 +286,14 @@ class Chamado(models.Model):
         self.retomar_sla()
         self.status = self.Status.EM_ANDAMENTO
         self.resolvido_em = None
+        self.resolvido_no_prazo = None
+        self.reaberturas += 1
         self.resposta_solicitante_em = timezone.now()  # avisa o técnico responsável
+
+    @classmethod
+    def prazo_confirmacao_display(cls):
+        """'1 dia' / '3 dias' — prazo de confirmação por extenso para as mensagens."""
+        return f'{cls.DIAS_CONFIRMACAO} dia{"s" if cls.DIAS_CONFIRMACAO != 1 else ""}'
 
     @property
     def aguardando_confirmacao(self):
@@ -222,9 +311,23 @@ class Chamado(models.Model):
         """Fecha os chamados resolvidos cujo prazo de confirmação passou. Não há tarefa agendada no
         sistema: é chamado ao abrir a fila, o histórico ou um chamado (é só um UPDATE barato)."""
         prazo = timedelta(days=cls.DIAS_CONFIRMACAO)
-        return cls.objects.filter(
-            status=cls.Status.RESOLVIDO, resolvido_em__lte=timezone.now() - prazo
-        ).update(status=cls.Status.FECHADO, fechado_em=models.F('resolvido_em') + prazo, sla_pausado_em=None)
+        expirados = list(
+            cls.objects.filter(status=cls.Status.RESOLVIDO, resolvido_em__lte=timezone.now() - prazo)
+            .values_list('pk', 'resolvido_em')
+        )
+        if not expirados:
+            return 0
+        total = cls.objects.filter(pk__in=[pk for pk, _ in expirados], status=cls.Status.RESOLVIDO).update(
+            status=cls.Status.FECHADO, fechado_em=models.F('resolvido_em') + prazo, sla_pausado_em=None
+        )
+        EventoChamado.objects.bulk_create([
+            EventoChamado(
+                chamado_id=pk, tipo=EventoChamado.Tipo.FECHADO, autor=None, criado_em=resolvido_em + prazo,
+                descricao=f'Fechou o chamado automaticamente: sem resposta do solicitante em {cls.prazo_confirmacao_display()}.',
+            )
+            for pk, resolvido_em in expirados
+        ])
+        return total
 
     @classmethod
     def respostas_nao_vistas(cls, tecnico):
@@ -342,3 +445,58 @@ class ProcedimentoEntry(models.Model):
 
     def __str__(self):
         return f'{self.get_tipo_display()} de {self.autor} em #{self.chamado_id}'
+
+
+class EventoChamado(models.Model):
+    """Registro (auditoria) do ciclo de vida do chamado: cada mudança de estado — atribuição,
+    pausa, resolução, reabertura, fechamento... — com quem fez e quando. Exibido na linha do tempo
+    junto com os procedimentos. `autor` vazio = ação automática do sistema."""
+
+    class Tipo(models.TextChoices):
+        ABERTURA = 'abertura', 'Abertura'
+        ATRIBUICAO = 'atribuicao', 'Atribuição'
+        REATRIBUICAO = 'reatribuicao', 'Reatribuição'
+        AGUARDANDO = 'aguardando', 'Aguardando solicitante'
+        RETOMADO = 'retomado', 'Atendimento retomado'
+        RESPONDIDO = 'respondido', 'Resposta do solicitante'
+        RESOLVIDO = 'resolvido', 'Resolução'
+        REABERTO = 'reaberto', 'Reabertura'
+        FECHADO = 'fechado', 'Fechamento'
+        AVALIADO = 'avaliado', 'Avaliação'
+        MOVIMENTACAO = 'movimentacao', 'Movimentação de ativo'
+
+    ICONES = {
+        'abertura': 'bi-plus-circle', 'atribuicao': 'bi-person-check', 'reatribuicao': 'bi-arrow-left-right',
+        'aguardando': 'bi-pause-circle', 'retomado': 'bi-play-circle', 'respondido': 'bi-reply',
+        'resolvido': 'bi-check-circle', 'reaberto': 'bi-arrow-counterclockwise', 'fechado': 'bi-lock',
+        'avaliado': 'bi-star', 'movimentacao': 'bi-pc-display',
+    }
+
+    chamado = models.ForeignKey(Chamado, on_delete=models.CASCADE, related_name='eventos')
+    tipo = models.CharField(max_length=20, choices=Tipo.choices)
+    autor = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='+'
+    )
+    descricao = models.CharField(max_length=255)
+    # Eventos internos (ex.: movimentação de ativo) aparecem só para a equipe.
+    publico = models.BooleanField(default=True)
+    criado_em = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        ordering = ['criado_em', 'pk']
+        verbose_name = 'Evento do chamado'
+        verbose_name_plural = 'Eventos do chamado'
+
+    def __str__(self):
+        return f'{self.get_tipo_display()} em #{self.chamado_id}'
+
+    @property
+    def icone(self):
+        return self.ICONES.get(self.tipo, 'bi-dot')
+
+    @property
+    def autor_display(self):
+        if self.autor is None:
+            return 'Sistema'
+        return self.autor.get_full_name() or self.autor.username
+

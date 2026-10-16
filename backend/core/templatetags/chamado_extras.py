@@ -60,3 +60,25 @@ def iniciais(nome):
     if len(partes) == 1:
         return partes[0][:2].upper()
     return (partes[0][0] + partes[-1][0]).upper()
+
+
+@register.filter
+def duracao(valor):
+    """timedelta -> texto curto ("45min", "3h 20min", "2d 5h"); vazio vira "—"."""
+    if valor is None:
+        return '—'
+    minutos = int(valor.total_seconds() // 60)
+    dias, resto = divmod(minutos, 60 * 24)
+    horas, minutos = divmod(resto, 60)
+    if dias:
+        return f'{dias}d {horas}h'
+    if horas:
+        return f'{horas}h {minutos}min'
+    return f'{minutos}min'
+
+
+@register.inclusion_tag('chamados/_tipo_badge.html')
+def tipo_badge(tipo, rotulo=None):
+    """Selo "Incidente"/"Requisição" (ícone + texto, nunca só cor)."""
+    return {'tipo': tipo, 'rotulo': rotulo}
+

@@ -37,8 +37,9 @@ class SubcategoriaSelect(PlaceholderSelect):
     def create_option(self, name, value, label, selected, index, subindex=None, attrs=None):
         option = super().create_option(name, value, label, selected, index, subindex, attrs)
         if value not in (None, ''):
-            subcategoria = self.choices.queryset.get(pk=value.value)
+            subcategoria = value.instance  # já carregada pelo queryset (sem consulta por opção)
             option['attrs']['data-categoria'] = subcategoria.categoria_id
+            option['attrs']['data-tipo'] = subcategoria.get_tipo_display()
         return option
 
 
@@ -89,10 +90,11 @@ class SubcategoriaForm(forms.ModelForm):
 
     class Meta:
         model = Subcategoria
-        fields = ['nome', 'prioridade']
-        labels = {'nome': 'Nome da subcategoria', 'prioridade': 'Prioridade padrão'}
+        fields = ['nome', 'tipo', 'prioridade']
+        labels = {'nome': 'Nome da subcategoria', 'tipo': 'Tipo', 'prioridade': 'Prioridade padrão'}
         widgets = {
             'nome': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Ex.: Impressora'}),
+            'tipo': forms.Select(attrs={'class': 'form-select'}),
             'prioridade': forms.Select(attrs={'class': 'form-select'}),
         }
 
