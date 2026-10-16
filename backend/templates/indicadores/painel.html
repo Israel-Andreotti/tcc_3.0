@@ -133,7 +133,7 @@
         <div class="hd-card hd-kpi" title="Avaliações 4 ou 5 / total de avaliações (nota de 1 a 5 ao confirmar a solução)">
             <div class="hd-kpi-rotulo">CSAT (satisfação)</div>
             <div class="hd-kpi-valor">{% if dados.csat is not None %}{{ dados.csat }}%{% else %}—{% endif %}</div>
-            <div class="hd-kpi-legenda">{% if dados.csat_media %}média {{ dados.csat_media|floatformat:1 }} de 5 · {% endif %}{{ dados.csat_base }} avaliação{{ dados.csat_base|pluralize:"ões" }}</div>
+            <div class="hd-kpi-legenda">{% if dados.csat_media %}média {{ dados.csat_media|floatformat:1 }} de 5 · {% endif %}{{ dados.csat_base }} avaliaç{{ dados.csat_base|pluralize:"ão,ões" }}</div>
         </div>
     </div>
     <div class="col-6 col-md-4 col-xl-3">
@@ -222,7 +222,7 @@
     <div class="hd-card mb-4">
         <h2 class="h6 mb-1">Satisfação dos solicitantes</h2>
         <p class="small text-muted-hd mb-3">
-            {{ dados.csat_base }} avaliação{{ dados.csat_base|pluralize:"ões" }} no período ·
+            {{ dados.csat_base }} avaliaç{{ dados.csat_base|pluralize:"ão,ões" }} no período ·
             CSAT = satisfeitos (notas 4 e 5) ÷ total de avaliações.
         </p>
         {% if dados.csat_base %}
@@ -232,7 +232,7 @@
                 <div class="d-flex justify-content-between align-items-baseline py-2{% if not forloop.last %} border-bottom{% endif %}">
                     <div>
                         <div class="fw-semibold">{{ g.grupo }}</div>
-                        <div class="small text-muted-hd">notas {{ g.notas }} · {{ g.total }} avaliação{{ g.total|pluralize:"ões" }}</div>
+                        <div class="small text-muted-hd">notas {{ g.notas }} · {{ g.total }} avaliaç{{ g.total|pluralize:"ão,ões" }}</div>
                     </div>
                     <div class="fs-4 fw-bold">{{ g.percentual }}%</div>
                 </div>
