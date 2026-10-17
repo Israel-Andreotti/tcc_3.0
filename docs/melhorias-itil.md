@@ -11,7 +11,7 @@ conforme forem implementados.
 | Central de Serviços (Service Desk) | Ponto único de contato: abertura de chamados, fila da equipe, atribuição e linha do tempo do atendimento |
 | Gerenciamento de Nível de Serviço | SLA por prioridade, pausa quando a espera é do usuário, nível de serviço medido no painel |
 | Catálogo de Serviços | Categorias e subcategorias com prioridade padrão, editáveis pelo administrador |
-| Gerenciamento de Incidentes | Registro → atribuição → diagnóstico → resolução → confirmação pelo usuário → fechamento, com reabertura |
+| Gerenciamento de Incidentes | Registro → atribuição → diagnóstico → fechamento pelo técnico, com reabertura pelo usuário em até 1 dia |
 | Gestão de Ativos de TI | Patrimônio, lotação (setor ou funcionário) e trilha de auditoria de todas as movimentações |
 | Medição e Relatórios | Painel com FTR, tempos médios de atendimento e resolução, resolução no 1º contato, reabertura, nível de serviço e CSAT |
 
@@ -109,7 +109,7 @@ chamados de cada ativo, revelando equipamentos problemáticos.
 ### 9. Comunicação por e-mail
 
 Os avisos existem apenas dentro do sistema. O ITIL reforça manter o usuário informado nos marcos do
-atendimento (aberto, aguardando você, resolvido).
+atendimento (aberto, aguardando você, fechado).
 
 **Proposta:** e-mails nos eventos principais (depende de configurar um serviço de envio).
 

@@ -42,12 +42,12 @@ PRIORIDADE_DESCRICOES = {
 
 
 class ChamadoEditavelMixin:
-    """Bloqueia ações em chamados já encerrados (resolvidos/fechados), mesmo via POST direto."""
+    """Bloqueia ações em chamados já fechados, mesmo via POST direto."""
 
     def dispatch(self, request, *args, **kwargs):
         chamado = get_object_or_404(Chamado, pk=kwargs['pk'])
         if chamado.encerrado:
-            messages.error(request, 'Este chamado já foi encerrado e não pode mais ser alterado.')
+            messages.error(request, 'Este chamado já foi fechado e não pode mais ser alterado.')
             return redirect('chamados:detail', pk=chamado.pk)
         return super().dispatch(request, *args, **kwargs)
 
@@ -88,7 +88,7 @@ def anotacao_sla_consumido():
 def versao_fila():
     """Identificador do estado da fila da equipe (chamados em aberto): muda quando um chamado entra,
     sai ou é alterado (atribuído, status...). A página da fila compara periodicamente e recarrega."""
-    dados = Chamado.objects.exclude(status__in=[Chamado.Status.RESOLVIDO, Chamado.Status.FECHADO]).aggregate(
+    dados = Chamado.objects.exclude(status=Chamado.Status.FECHADO).aggregate(
         total=models.Count('pk'), ultimo=models.Max('atualizado_em'), maior_id=models.Max('pk')
     )
     ultimo = dados['ultimo'].timestamp() if dados['ultimo'] else 0
@@ -131,7 +131,6 @@ class ChamadoListView(LoginRequiredMixin, ListView):
         return 'recentes' if self.request.user.is_solicitante() else 'urgencia'
 
     def get_queryset(self):
-        Chamado.fechar_resolvidos_expirados()
         usuario = self.request.user
         qs = Chamado.objects.select_related(
             'solicitante', 'solicitante__setor', 'atendente', 'atendente__setor', 'categoria', 'subcategoria', 'setor'
@@ -140,7 +139,7 @@ class ChamadoListView(LoginRequiredMixin, ListView):
             qs = qs.filter(solicitante=usuario)
         else:
             # Fila de trabalho do técnico: só chamados ainda em aberto.
-            qs = qs.exclude(status__in=[Chamado.Status.RESOLVIDO, Chamado.Status.FECHADO])
+            qs = qs.exclude(status=Chamado.Status.FECHADO)
 
         qs = qs.annotate(
             sla_pausado_ordem=Case(When(sla_pausado_em__isnull=False, then=1), default=0, output_field=IntegerField()),
@@ -197,8 +196,7 @@ class ChamadoListView(LoginRequiredMixin, ListView):
             # Independe de filtro/paginação: alimenta o pop-up e o aviso de "precisa da sua resposta".
             context['pendencias_solicitante'] = list(
                 Chamado.objects.filter(
-                    solicitante=usuario,
-                    status__in=[Chamado.Status.AGUARDANDO_SOLICITANTE, Chamado.Status.RESOLVIDO],
+                    solicitante=usuario, status=Chamado.Status.AGUARDANDO_SOLICITANTE
                 ).order_by('sla_pausado_em')
             )
         if not usuario.is_solicitante():
@@ -216,11 +214,10 @@ class ChamadoHistoricoView(AtendenteRequiredMixin, ListView):
     paginate_by = 20
 
     def get_queryset(self):
-        Chamado.fechar_resolvidos_expirados()
         qs = Chamado.objects.select_related(
             'solicitante', 'solicitante__setor', 'atendente', 'atendente__setor', 'categoria', 'subcategoria'
         ).filter(
-            status__in=[Chamado.Status.RESOLVIDO, Chamado.Status.FECHADO]
+            status=Chamado.Status.FECHADO
         ).order_by('-atualizado_em')
         termo = self.request.GET.get('q', '').strip()
         if termo:
@@ -243,7 +240,6 @@ class ChamadoDetailView(LoginRequiredMixin, DetailView):
     context_object_name = 'chamado'
 
     def get_queryset(self):
-        Chamado.fechar_resolvidos_expirados()
         usuario = self.request.user
         qs = Chamado.objects.select_related('solicitante', 'atendente', 'categoria', 'subcategoria')
         if usuario.is_solicitante():
@@ -262,6 +258,7 @@ class ChamadoDetailView(LoginRequiredMixin, DetailView):
         context = super().get_context_data(**kwargs)
         context['pode_gerenciar'] = self.request.user.is_authenticated and not self.request.user.is_solicitante()
         context['pode_editar'] = context['pode_gerenciar'] and not self.object.encerrado
+        context['dias_reabertura'] = Chamado.prazo_reabertura_display()
         if context['pode_gerenciar']:
             context['procedimento_form'] = ProcedimentoEntryForm(initial={'tipo': 'publico'})
             context['procedimentos'] = self.object.procedimentos.select_related('autor')
@@ -282,7 +279,7 @@ class ChamadoDetailView(LoginRequiredMixin, DetailView):
                 tipo=ProcedimentoEntry.Tipo.INTERNO
             ).select_related('autor')
             context['pode_responder'] = self.object.status == Chamado.Status.AGUARDANDO_SOLICITANTE
-            context['pode_confirmar'] = self.object.status == Chamado.Status.RESOLVIDO
+            context['pode_reabrir'] = self.object.pode_reabrir
             context['pode_avaliar'] = self.object.status == Chamado.Status.FECHADO and self.object.avaliacao is None
             context['abrir_avaliacao'] = context['pode_avaliar'] and self.request.GET.get('avaliar') == '1'
             if context['pode_responder']:
@@ -372,17 +369,17 @@ class ProcedimentoEntryCreateView(AtendenteRequiredMixin, ChamadoEditavelMixin, 
         return redirect('chamados:detail', pk=pk)
 
 
-class ChamadoConcluirView(AtendenteRequiredMixin, ChamadoEditavelMixin, View):
+class ChamadoFecharView(AtendenteRequiredMixin, ChamadoEditavelMixin, View):
+    """Técnico terminou o atendimento e fecha o chamado. O solicitante ainda pode reabri-lo
+    durante Chamado.DIAS_REABERTURA dias e avaliar o atendimento."""
+
     @transaction.atomic
     def post(self, request, pk):
         chamado = get_object_or_404(Chamado, pk=pk)
-        chamado.resolver()
+        chamado.fechar()
         chamado.save()
-        prazo = 'dentro do prazo de SLA' if chamado.resolvido_no_prazo else 'fora do prazo de SLA'
-        chamado.registrar_evento(
-            EventoChamado.Tipo.RESOLVIDO, request.user,
-            f'Marcou como resolvido ({prazo}); aguardando a confirmação do solicitante.',
-        )
+        prazo = 'dentro do prazo de SLA' if chamado.fechado_no_prazo else 'fora do prazo de SLA'
+        chamado.registrar_evento(EventoChamado.Tipo.FECHADO, request.user, f'Fechou o chamado ({prazo}).')
 
         pendentes = chamado.movimentacoes_ativo.filter(status=MovimentacaoAtivo.Status.PENDENTE).select_related('ativo')
         efetivadas = 0
@@ -397,8 +394,7 @@ class ChamadoConcluirView(AtendenteRequiredMixin, ChamadoEditavelMixin, View):
             efetivadas += 1
 
         aviso = (
-            f'Chamado resolvido. Aguardando a confirmação do solicitante '
-            f'(fecha automaticamente em {Chamado.prazo_confirmacao_display()}).'
+            f'Chamado fechado. O solicitante pode reabri-lo em até {Chamado.prazo_reabertura_display()}.'
         )
         if efetivadas:
             aviso += f' {efetivadas} movimentação(ões) de ativo efetivada(s).'
@@ -429,28 +425,10 @@ class ChamadoReatribuirView(AtendenteRequiredMixin, ChamadoEditavelMixin, View):
         return redirect('chamados:detail', pk=pk)
 
 
-class ChamadoConfirmarSolucaoView(LoginRequiredMixin, View):
-    """Solicitante confirma que o problema foi resolvido: o chamado é fechado em definitivo."""
-
-    @transaction.atomic
-    def post(self, request, pk):
-        chamado = get_object_or_404(Chamado, pk=pk, solicitante=request.user)
-        if chamado.status != Chamado.Status.RESOLVIDO:
-            messages.info(request, 'Este chamado não está aguardando a sua confirmação.')
-            return redirect('chamados:detail', pk=pk)
-        chamado.fechar()
-        chamado.save()
-        chamado.registrar_evento(
-            EventoChamado.Tipo.FECHADO, request.user, 'Confirmou que o problema foi resolvido; chamado fechado.'
-        )
-        messages.success(request, 'Obrigado! O chamado foi fechado.')
-        # Abre o pop-up de avaliação na página do chamado.
-        return redirect(f"{reverse('chamados:detail', kwargs={'pk': pk})}?avaliar=1")
-
-
 class ChamadoAvaliarView(LoginRequiredMixin, View):
-    """Avaliação do atendimento pelo solicitante (1 a 5, CSAT), depois que o chamado foi fechado.
-    Opcional e uma única vez por chamado; o comentário, se houver, vai para a linha do tempo."""
+    """Avaliação do atendimento pelo solicitante (1 a 5, CSAT), depois que o técnico fechou o
+    chamado. Opcional e uma vez por fechamento (reabrir descarta a nota); o comentário, se houver,
+    vai para a linha do tempo."""
 
     @transaction.atomic
     def post(self, request, pk):
@@ -479,14 +457,19 @@ class ChamadoAvaliarView(LoginRequiredMixin, View):
 
 
 class ChamadoReabrirView(LoginRequiredMixin, View):
-    """Solicitante informa que o problema não foi resolvido: o chamado volta para o técnico
-    (em andamento), o SLA é retomado e o técnico recebe o aviso de nova resposta."""
+    """Solicitante informa que o problema não foi resolvido, dentro do prazo de reabertura: o
+    chamado volta para o técnico (em andamento), o SLA é retomado e o técnico recebe o aviso de
+    nova resposta."""
 
     @transaction.atomic
     def post(self, request, pk):
         chamado = get_object_or_404(Chamado, pk=pk, solicitante=request.user)
-        if chamado.status != Chamado.Status.RESOLVIDO:
-            messages.info(request, 'Este chamado não pode mais ser reaberto.')
+        if not chamado.pode_reabrir:
+            messages.info(
+                request,
+                f'Este chamado não pode mais ser reaberto (prazo de {Chamado.prazo_reabertura_display()} '
+                'após o fechamento). Abra um novo chamado.',
+            )
             return redirect('chamados:detail', pk=pk)
         motivo = request.POST.get('texto', '').strip()
         if not motivo:
@@ -599,7 +582,7 @@ def validar_movimentacao_ativo(chamado, patrimonio, funcionario_id=None):
         return None, None, None, f'Nenhum ativo encontrado com o patrimônio "{patrimonio}".'
 
     if ativo.tem_movimentacao_pendente:
-        return ativo, None, None, f'O ativo "{ativo}" já tem uma movimentação pendente aguardando conclusão de chamado.'
+        return ativo, None, None, f'O ativo "{ativo}" já tem uma movimentação pendente aguardando o fechamento de um chamado.'
 
     setor_ti = Setor.objects.filter(nome='TI').first()
     if not setor_ti:
@@ -656,7 +639,6 @@ class ChamadoFilaVersaoView(AtendenteRequiredMixin, View):
     """JSON consultado pela página da fila para saber se precisa recarregar."""
 
     def get(self, request):
-        Chamado.fechar_resolvidos_expirados()
         return JsonResponse({'versao': versao_fila()})
 
 
@@ -700,12 +682,12 @@ class ChamadoVerificarAtivoView(AtendenteRequiredMixin, ChamadoEditavelMixin, Vi
             mensagem = f'{ativo} será desatribuído de {nome} e devolvido à {setor}.'
         else:
             mensagem = f'{ativo} — {ativo.lotacao_display} → {destino_display(setor, funcionario)}.'
-        return JsonResponse({'ok': True, 'mensagem': f'{mensagem} Será efetivada ao concluir o chamado.'})
+        return JsonResponse({'ok': True, 'mensagem': f'{mensagem} Será efetivada ao fechar o chamado.'})
 
 
 class ChamadoMovimentarAtivoView(AtendenteRequiredMixin, ChamadoEditavelMixin, View):
     """Registra a movimentação como PENDENTE a partir só do número de patrimônio (regra em
-    validar_movimentacao_ativo). Nada muda de fato até o chamado ser concluído (ver ChamadoConcluirView)."""
+    validar_movimentacao_ativo). Nada muda de fato até o chamado ser fechado (ver ChamadoFecharView)."""
 
     def post(self, request, pk):
         chamado = get_object_or_404(Chamado, pk=pk)
@@ -731,13 +713,13 @@ class ChamadoMovimentarAtivoView(AtendenteRequiredMixin, ChamadoEditavelMixin, V
             desatribuir = f' (será desatribuído de {ativo.funcionario.get_full_name() or ativo.funcionario.username})'
         chamado.registrar_evento(
             EventoChamado.Tipo.MOVIMENTACAO, request.user,
-            f'Registrou a movimentação de {ativo} para {destino_display(setor, funcionario)} (pendente até a conclusão).',
+            f'Registrou a movimentação de {ativo} para {destino_display(setor, funcionario)} (pendente até o fechamento).',
             publico=False,
         )
         messages.success(
             request,
             f'Movimentação de "{ativo}" para {destino_display(setor, funcionario)}{desatribuir} registrada como '
-            'pendente — só será efetivada quando este chamado for concluído.',
+            'pendente — só será efetivada quando este chamado for fechado.',
         )
         return redirect('chamados:detail', pk=pk)
 

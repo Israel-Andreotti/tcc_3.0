@@ -46,18 +46,13 @@
 </div>
 {% endif %}
 
-{% if chamado.status == 'resolvido' and pode_gerenciar %}
-<div class="alert alert-info d-flex align-items-center gap-2">
-    <i class="bi bi-hourglass-split"></i>
-    <span>
-        Resolvido em {{ chamado.resolvido_em|date:'d/m/Y H:i' }} — <strong>aguardando a confirmação do solicitante</strong>.
-        Se ele não responder, o chamado fecha automaticamente em {{ chamado.prazo_confirmacao|date:'d/m/Y H:i' }}.
-    </span>
-</div>
-{% elif chamado.status == 'fechado' %}
+{% if chamado.status == 'fechado' %}
 <div class="alert alert-secondary d-flex align-items-center gap-2">
     <i class="bi bi-lock-fill"></i>
-    <span>Chamado fechado{% if chamado.fechado_em %} em {{ chamado.fechado_em|date:'d/m/Y H:i' }}{% endif %}{% if pode_gerenciar %} — somente leitura{% endif %}.</span>
+    <span>
+        Chamado fechado{% if chamado.fechado_em %} em {{ chamado.fechado_em|date:'d/m/Y H:i' }}{% endif %}{% if pode_gerenciar %} — somente leitura{% endif %}.
+        {% if chamado.pode_reabrir %}O solicitante pode reabri-lo até {{ chamado.prazo_reabertura|date:'d/m/Y H:i' }}.{% endif %}
+    </span>
 </div>
 {% endif %}
 
@@ -178,7 +173,7 @@
 document.addEventListener('DOMContentLoaded', function () {
     var modal = document.getElementById('avaliacaoModal');
     if (!modal) return;
-    // Abre sozinho logo depois de o solicitante confirmar a solução.
+    // Abre sozinho quando a página é aberta com ?avaliar=1.
     if (modal.dataset.abrir === '1' && window.bootstrap) bootstrap.Modal.getOrCreateInstance(modal).show();
     var textos = {1: 'Muito insatisfeito', 2: 'Insatisfeito', 3: 'Neutro', 4: 'Satisfeito', 5: 'Muito satisfeito'};
     modal.querySelectorAll('input[name="avaliacao"]').forEach(function (opcao) {
@@ -190,15 +185,11 @@ document.addEventListener('DOMContentLoaded', function () {
 </script>
 {% endif %}
 
-{% if pode_confirmar %}
-<div class="hd-card mb-4 border border-2 border-success">
-    <h2 class="h6 text-uppercase text-success mb-2"><i class="bi bi-patch-check-fill"></i> O técnico marcou este chamado como resolvido</h2>
-    <p class="mb-3">O seu problema foi resolvido? Se você não responder até <strong>{{ chamado.prazo_confirmacao|date:'d/m/Y H:i' }}</strong>, o chamado será fechado automaticamente.</p>
+{% if pode_reabrir %}
+<div class="hd-card mb-4 border border-2 border-danger-subtle">
+    <h2 class="h6 text-uppercase text-muted-hd mb-2"><i class="bi bi-arrow-counterclockwise"></i> O problema continua?</h2>
+    <p class="mb-3">Se o problema não foi resolvido, você pode reabrir este chamado até <strong>{{ chamado.prazo_reabertura|date:'d/m/Y H:i' }}</strong>.</p>
     <div class="d-flex flex-wrap gap-2">
-        <form method="post" action="{% url 'chamados:confirmar_solucao' chamado.pk %}" class="m-0">
-            {% csrf_token %}
-            <button type="submit" class="btn btn-success"><i class="bi bi-check-circle-fill"></i> Sim, foi resolvido</button>
-        </form>
         <button type="button" class="btn btn-outline-danger" data-bs-toggle="collapse" data-bs-target="#reabrirChamado"
                 aria-expanded="false" aria-controls="reabrirChamado">
             <i class="bi bi-arrow-counterclockwise"></i> Não foi resolvido
@@ -295,7 +286,7 @@ document.addEventListener('DOMContentLoaded', function () {
         </li>
         {% endfor %}
     </ul>
-    <div class="form-text mb-3">Efetivada automaticamente quando o chamado for concluído.</div>
+    <div class="form-text mb-3">Efetivada automaticamente quando o chamado for fechado.</div>
     {% endif %}
 
     <form method="post" action="{% url 'chamados:movimentar_ativo' chamado.pk %}" class="d-flex flex-wrap gap-2 align-items-end"
@@ -360,8 +351,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
 {% if pode_editar %}
 <div class="mb-4 text-center">
-    <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#confirmarResolverModal">
-        <i class="bi bi-check-circle-fill"></i> Resolver chamado
+    <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#confirmarFecharModal">
+        <i class="bi bi-check-circle-fill"></i> Fechar chamado
     </button>
 </div>
 {% endif %}
@@ -418,22 +409,22 @@ document.addEventListener('DOMContentLoaded', function () {
     </div>
 </div>
 
-<div class="modal fade" id="confirmarResolverModal" tabindex="-1" aria-hidden="true">
+<div class="modal fade" id="confirmarFecharModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
-                <h2 class="modal-title h5"><i class="bi bi-check-circle-fill text-success"></i> Resolver chamado</h2>
+                <h2 class="modal-title h5"><i class="bi bi-check-circle-fill text-success"></i> Fechar chamado</h2>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
             </div>
             <div class="modal-body">
-                <p class="mb-0">Marcar o chamado <strong>{{ chamado.codigo }}</strong> como resolvido? Essa ação encerra o atendimento.</p>
+                <p class="mb-0">Fechar o chamado <strong>{{ chamado.codigo }}</strong>? Essa ação encerra o atendimento; o solicitante ainda pode reabri-lo em até {{ dias_reabertura }}.</p>
                 {% if movimentacoes_pendentes %}
                 <p class="mb-0 mt-2 small text-muted-hd"><i class="bi bi-hourglass-split"></i> {{ movimentacoes_pendentes|length }} movimentação(ões) de ativo pendente(s) será(ão) efetivada(s) junto.</p>
                 {% endif %}
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
-                <button type="button" class="btn btn-success" id="confirmarResolverBtn"><i class="bi bi-check-circle-fill"></i> Sim, resolver</button>
+                <button type="button" class="btn btn-success" id="confirmarFecharBtn"><i class="bi bi-check-circle-fill"></i> Sim, fechar</button>
             </div>
         </div>
     </div>
@@ -524,11 +515,11 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 
 document.addEventListener('DOMContentLoaded', function () {
-    var botaoConfirmar = document.getElementById('confirmarResolverBtn');
+    var botaoConfirmar = document.getElementById('confirmarFecharBtn');
     if (botaoConfirmar) {
         botaoConfirmar.addEventListener('click', function () {
             var form = document.getElementById('procedimentoForm');
-            form.action = '{% url "chamados:concluir" chamado.pk %}';
+            form.action = '{% url "chamados:fechar" chamado.pk %}';
             form.submit();
         });
     }

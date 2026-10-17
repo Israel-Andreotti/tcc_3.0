@@ -1,10 +1,12 @@
 import threading
 import time
+from datetime import timedelta
 from unittest import mock
 
 from django.db import connection
 from django.test import Client, TestCase, TransactionTestCase
 from django.urls import reverse
+from django.utils import timezone
 
 from usuarios.models import Setor, Usuario
 
@@ -95,3 +97,81 @@ class AtribuirChamadoConcorrenciaTests(TransactionTestCase):
         chamado.refresh_from_db()
         vencedor = next(nome for nome, resultado in resultados.items() if resultado == 'atribuiu')
         self.assertEqual(chamado.atendente.username, vencedor)
+
+
+class FechamentoEReaberturaTests(TestCase):
+    """Fluxo de encerramento: o técnico fecha; o solicitante pode reabrir em até
+    Chamado.DIAS_REABERTURA dias (volta para em andamento) e avaliar depois de cada fechamento."""
+
+    def setUp(self):
+        self.tecnico, _, self.chamado = criar_cenario()
+        self.solicitante = self.chamado.solicitante
+        cliente_logado(self.tecnico).post(reverse('chamados:pegar', args=[self.chamado.pk]))
+
+    def fechar(self):
+        return cliente_logado(self.tecnico).post(reverse('chamados:fechar', args=[self.chamado.pk]))
+
+    def reabrir(self, texto='Continua sem acesso.'):
+        return cliente_logado(self.solicitante).post(
+            reverse('chamados:reabrir', args=[self.chamado.pk]), {'texto': texto}
+        )
+
+    def test_tecnico_fecha_chamado(self):
+        self.fechar()
+
+        self.chamado.refresh_from_db()
+        self.assertEqual(self.chamado.status, Chamado.Status.FECHADO)
+        self.assertIsNotNone(self.chamado.fechado_em)
+        self.assertTrue(self.chamado.fechado_no_prazo)
+        self.assertTrue(self.chamado.sla_pausado)
+
+    def test_solicitante_reabre_e_tecnico_fecha_de_novo(self):
+        self.fechar()
+        self.reabrir()
+
+        self.chamado.refresh_from_db()
+        self.assertEqual(self.chamado.status, Chamado.Status.EM_ANDAMENTO)
+        self.assertIsNone(self.chamado.fechado_em)
+        self.assertFalse(self.chamado.sla_pausado)
+        self.assertEqual(self.chamado.reaberturas, 1)
+
+        self.fechar()
+        self.chamado.refresh_from_db()
+        self.assertEqual(self.chamado.status, Chamado.Status.FECHADO)
+
+    def test_nao_reabre_depois_do_prazo(self):
+        self.fechar()
+        vencido = timezone.now() - timedelta(days=Chamado.DIAS_REABERTURA, minutes=1)
+        Chamado.objects.filter(pk=self.chamado.pk).update(fechado_em=vencido)
+
+        self.reabrir()
+
+        self.chamado.refresh_from_db()
+        self.assertEqual(self.chamado.status, Chamado.Status.FECHADO)
+        self.assertEqual(self.chamado.reaberturas, 0)
+
+    def test_reabrir_exige_motivo(self):
+        self.fechar()
+        self.reabrir(texto='')
+
+        self.chamado.refresh_from_db()
+        self.assertEqual(self.chamado.status, Chamado.Status.FECHADO)
+
+    def test_avaliacao_apos_fechar_e_descartada_ao_reabrir(self):
+        self.fechar()
+        cliente_logado(self.solicitante).post(reverse('chamados:avaliar', args=[self.chamado.pk]), {'avaliacao': '2'})
+        self.chamado.refresh_from_db()
+        self.assertEqual(self.chamado.avaliacao, 2)
+
+        self.reabrir()
+        self.chamado.refresh_from_db()
+        self.assertIsNone(self.chamado.avaliacao)
+
+    def test_chamado_fechado_e_somente_leitura_para_a_equipe(self):
+        self.fechar()
+        cliente_logado(self.tecnico).post(
+            reverse('chamados:aguardar_solicitante', args=[self.chamado.pk]), {'texto': 'Qual o ramal?'}
+        )
+
+        self.chamado.refresh_from_db()
+        self.assertEqual(self.chamado.status, Chamado.Status.FECHADO)

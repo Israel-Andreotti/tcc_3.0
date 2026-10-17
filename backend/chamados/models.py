@@ -103,7 +103,6 @@ class Chamado(models.Model):
         ABERTO = 'aberto', 'Aberto'
         EM_ANDAMENTO = 'em_andamento', 'Em andamento'
         AGUARDANDO_SOLICITANTE = 'aguardando_solicitante', 'Aguardando solicitante'
-        RESOLVIDO = 'resolvido', 'Resolvido'
         FECHADO = 'fechado', 'Fechado'
 
     Prioridade = Prioridade
@@ -129,9 +128,9 @@ class Chamado(models.Model):
         1: ('Muito insatisfeito', 'insatisfeitos'),
     }
 
-    # Depois de resolvido, o solicitante tem esse prazo para confirmar a solução ou reabrir o
-    # chamado; sem resposta, o chamado é fechado automaticamente (ver fechar_resolvidos_expirados).
-    DIAS_CONFIRMACAO = 1
+    # Depois que o técnico fecha o chamado, o solicitante tem esse prazo para reabri-lo; passado o
+    # prazo, o fechamento é definitivo.
+    DIAS_REABERTURA = 1
 
     titulo = models.CharField(max_length=150)
     descricao = models.TextField()
@@ -190,9 +189,7 @@ class Chamado(models.Model):
     criado_em = models.DateTimeField(auto_now_add=True)
     atualizado_em = models.DateTimeField(auto_now=True)
     prazo_sla = models.DateTimeField(null=True, blank=True)
-    # Resolvido = o técnico concluiu e aguarda a confirmação do solicitante (pode ser reaberto).
-    # Fechado = encerramento definitivo (confirmado pelo solicitante ou automático).
-    resolvido_em = models.DateTimeField(null=True, blank=True)
+    # Quando o técnico fechou o chamado (o último fechamento, se foi reaberto). Vazio enquanto aberto.
     fechado_em = models.DateTimeField(null=True, blank=True)
     # Pausa do SLA enquanto o chamado aguarda o solicitante: ao retomar, o tempo parado é
     # somado em `sla_tempo_pausado` e o `prazo_sla` é estendido na mesma medida.
@@ -206,13 +203,13 @@ class Chamado(models.Model):
     atribuido_em = models.DateTimeField(null=True, blank=True)
     # Primeira comunicação pública da equipe com o solicitante (FTR = abertura -> primeira resposta).
     primeira_resposta_em = models.DateTimeField(null=True, blank=True)
-    # A última resolução foi dentro do prazo de SLA? (nível de serviço)
-    resolvido_no_prazo = models.BooleanField(null=True, blank=True)
+    # O último fechamento foi dentro do prazo de SLA? (nível de serviço)
+    fechado_no_prazo = models.BooleanField(null=True, blank=True)
     # Quantas vezes o solicitante disse que não foi resolvido (taxa de reabertura).
     reaberturas = models.PositiveIntegerField(default=0)
     # O técnico precisou pedir informação ao solicitante (não conta como resolução no primeiro contato).
     pediu_info = models.BooleanField(default=False)
-    # Avaliação do solicitante ao confirmar a solução, de 1 a 5 (CSAT).
+    # Avaliação do solicitante depois do fechamento, de 1 a 5 (CSAT). Zerada se o chamado for reaberto.
     avaliacao = models.PositiveSmallIntegerField(null=True, blank=True)
 
     class Meta:
@@ -262,78 +259,51 @@ class Chamado(models.Model):
         if self.primeira_resposta_em is None:
             self.primeira_resposta_em = timezone.now()
 
-    # ---- Ciclo de encerramento: resolvido -> (confirmação do solicitante) -> fechado ----
-
-    def resolver(self):
-        """Técnico concluiu o atendimento. O SLA fica pausado enquanto aguarda a confirmação do
-        solicitante: se ele reabrir, o relógio volta de onde parou. Não salva."""
-        self.retomar_sla()  # fecha uma pausa anterior (aguardando solicitante), se houver
-        self.resolvido_no_prazo = bool(self.prazo_sla and timezone.now() <= self.prazo_sla)
-        self.registrar_primeira_resposta()  # resolver sem nenhum registro antes também é responder
-        self.pausar_sla()
-        self.status = self.Status.RESOLVIDO
-        self.resolvido_em = timezone.now()
-        self.fechado_em = None
+    # ---- Ciclo de encerramento: em andamento -> fechado (técnico) -> reaberto (solicitante) ----
 
     def fechar(self):
-        """Encerramento definitivo (solução confirmada). Não salva."""
+        """Técnico concluiu o atendimento e fecha o chamado. O SLA fica pausado: se o solicitante
+        reabrir, o relógio volta de onde parou. Não salva."""
+        self.retomar_sla()  # fecha uma pausa anterior (aguardando solicitante), se houver
+        self.fechado_no_prazo = bool(self.prazo_sla and timezone.now() <= self.prazo_sla)
+        self.registrar_primeira_resposta()  # fechar sem nenhum registro antes também é responder
+        self.pausar_sla()
         self.status = self.Status.FECHADO
         self.fechado_em = timezone.now()
-        self.sla_pausado_em = None
 
     def reabrir(self):
-        """Solicitante disse que não foi resolvido: volta para o técnico, com o SLA retomado. Não salva."""
+        """Solicitante disse que não foi resolvido: volta para o técnico, com o SLA retomado. A
+        avaliação anterior é descartada (vale a do próximo fechamento). Não salva."""
         self.retomar_sla()
         self.status = self.Status.EM_ANDAMENTO
-        self.resolvido_em = None
-        self.resolvido_no_prazo = None
+        self.fechado_em = None
+        self.fechado_no_prazo = None
+        self.avaliacao = None
         self.reaberturas += 1
         self.resposta_solicitante_em = timezone.now()  # avisa o técnico responsável
 
     @classmethod
-    def prazo_confirmacao_display(cls):
-        """'1 dia' / '3 dias' — prazo de confirmação por extenso para as mensagens."""
-        return f'{cls.DIAS_CONFIRMACAO} dia{"s" if cls.DIAS_CONFIRMACAO != 1 else ""}'
+    def prazo_reabertura_display(cls):
+        """'1 dia' / '3 dias' — prazo de reabertura por extenso para as mensagens."""
+        return f'{cls.DIAS_REABERTURA} dia{"s" if cls.DIAS_REABERTURA != 1 else ""}'
 
     @property
-    def aguardando_confirmacao(self):
-        return self.status == self.Status.RESOLVIDO
-
-    @property
-    def prazo_confirmacao(self):
-        """Até quando o solicitante pode confirmar/reabrir antes do fechamento automático."""
-        if self.resolvido_em:
-            return self.resolvido_em + timedelta(days=self.DIAS_CONFIRMACAO)
+    def prazo_reabertura(self):
+        """Até quando o solicitante pode reabrir o chamado fechado."""
+        if self.status == self.Status.FECHADO and self.fechado_em:
+            return self.fechado_em + timedelta(days=self.DIAS_REABERTURA)
         return None
 
-    @classmethod
-    def fechar_resolvidos_expirados(cls):
-        """Fecha os chamados resolvidos cujo prazo de confirmação passou. Não há tarefa agendada no
-        sistema: é chamado ao abrir a fila, o histórico ou um chamado (é só um UPDATE barato)."""
-        prazo = timedelta(days=cls.DIAS_CONFIRMACAO)
-        expirados = list(
-            cls.objects.filter(status=cls.Status.RESOLVIDO, resolvido_em__lte=timezone.now() - prazo)
-            .values_list('pk', 'resolvido_em')
-        )
-        if not expirados:
-            return 0
-        total = cls.objects.filter(pk__in=[pk for pk, _ in expirados], status=cls.Status.RESOLVIDO).update(
-            status=cls.Status.FECHADO, fechado_em=models.F('resolvido_em') + prazo, sla_pausado_em=None
-        )
-        EventoChamado.objects.bulk_create([
-            EventoChamado(
-                chamado_id=pk, tipo=EventoChamado.Tipo.FECHADO, autor=None, criado_em=resolvido_em + prazo,
-                descricao=f'Fechou o chamado automaticamente: sem resposta do solicitante em {cls.prazo_confirmacao_display()}.',
-            )
-            for pk, resolvido_em in expirados
-        ])
-        return total
+    @property
+    def pode_reabrir(self):
+        prazo = self.prazo_reabertura
+        return bool(prazo and timezone.now() <= prazo)
 
     @classmethod
     def respostas_nao_vistas(cls, tecnico):
         """Chamados abertos do técnico em que o solicitante respondeu e ele ainda não abriu."""
         return cls.objects.filter(atendente=tecnico, resposta_solicitante_em__isnull=False).exclude(
-            status__in=[cls.Status.RESOLVIDO, cls.Status.FECHADO]
+            status=cls.Status.FECHADO
         )
 
     @property
@@ -360,14 +330,14 @@ class Chamado(models.Model):
 
     @property
     def sla_estourado(self):
-        if self.status in (self.Status.RESOLVIDO, self.Status.FECHADO):
+        if self.status == self.Status.FECHADO:
             return False
         return bool(self.prazo_sla and self._sla_referencia() > self.prazo_sla)
 
     @property
     def encerrado(self):
-        """Chamado resolvido/fechado fica somente leitura: nenhuma ação da equipe é aceita."""
-        return self.status in (self.Status.RESOLVIDO, self.Status.FECHADO)
+        """Chamado fechado fica somente leitura: nenhuma ação da equipe é aceita."""
+        return self.status == self.Status.FECHADO
 
     @property
     def sla_concluido(self):
@@ -459,6 +429,7 @@ class EventoChamado(models.Model):
         AGUARDANDO = 'aguardando', 'Aguardando solicitante'
         RETOMADO = 'retomado', 'Atendimento retomado'
         RESPONDIDO = 'respondido', 'Resposta do solicitante'
+        # Só em chamados antigos: antes, o técnico "resolvia" e o fechamento vinha depois.
         RESOLVIDO = 'resolvido', 'Resolução'
         REABERTO = 'reaberto', 'Reabertura'
         FECHADO = 'fechado', 'Fechamento'

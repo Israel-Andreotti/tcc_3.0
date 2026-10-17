@@ -89,7 +89,7 @@ class MovimentacaoAtivo(models.Model):
     origem e destino, data/hora e o técnico que executou.
 
     Duas origens possíveis:
-    - Via chamado: fica "pendente" (nada muda no ativo) até o chamado ser concluído; só então
+    - Via chamado: fica "pendente" (nada muda no ativo) até o chamado ser fechado; só então
       é efetivada por efetivar(), que também captura a origem real naquele momento.
     - Edição manual do ativo: já nasce efetivada, sem chamado vinculado.
 

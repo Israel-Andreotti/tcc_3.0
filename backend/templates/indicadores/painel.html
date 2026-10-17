@@ -119,25 +119,25 @@
         <div class="hd-card hd-kpi">
             <div class="hd-kpi-rotulo">Total de chamados</div>
             <div class="hd-kpi-valor">{{ dados.total_chamados }}</div>
-            <div class="hd-kpi-legenda">{{ dados.total_resolvidos }} resolvido{{ dados.total_resolvidos|pluralize }} no período</div>
+            <div class="hd-kpi-legenda">{{ dados.total_fechados }} fechado{{ dados.total_fechados|pluralize }} no período</div>
         </div>
     </div>
     <div class="col-6 col-md-4 col-xl-3">
-        <div class="hd-card hd-kpi" title="Resolvidos dentro do prazo de SLA / resolvidos com prazo medido">
+        <div class="hd-card hd-kpi" title="Fechados dentro do prazo de SLA / fechados com prazo medido">
             <div class="hd-kpi-rotulo">Nível de serviço (SLA)</div>
             <div class="hd-kpi-valor">{% if dados.nivel_servico is not None %}{{ dados.nivel_servico }}%{% else %}—{% endif %}</div>
-            <div class="hd-kpi-legenda">resolvidos dentro do prazo · base {{ dados.nivel_servico_base }}</div>
+            <div class="hd-kpi-legenda">fechados dentro do prazo · base {{ dados.nivel_servico_base }}</div>
         </div>
     </div>
     <div class="col-6 col-md-4 col-xl-3">
-        <div class="hd-card hd-kpi" title="Avaliações 4 ou 5 / total de avaliações (nota de 1 a 5 ao confirmar a solução)">
+        <div class="hd-card hd-kpi" title="Avaliações 4 ou 5 / total de avaliações (nota de 1 a 5 após o fechamento)">
             <div class="hd-kpi-rotulo">CSAT (satisfação)</div>
             <div class="hd-kpi-valor">{% if dados.csat is not None %}{{ dados.csat }}%{% else %}—{% endif %}</div>
             <div class="hd-kpi-legenda">{% if dados.csat_media %}média {{ dados.csat_media|floatformat:1 }} de 5 · {% endif %}{{ dados.csat_base }} avaliaç{{ dados.csat_base|pluralize:"ão,ões" }}</div>
         </div>
     </div>
     <div class="col-6 col-md-4 col-xl-3">
-        <div class="hd-card hd-kpi" title="Resolvidos sem reabertura e sem pedir informação ao solicitante / resolvidos">
+        <div class="hd-card hd-kpi" title="Fechados sem reabertura e sem pedir informação ao solicitante / fechados">
             <div class="hd-kpi-rotulo">Resolução no 1º contato</div>
             <div class="hd-kpi-valor">{% if dados.primeiro_contato is not None %}{{ dados.primeiro_contato }}%{% else %}—{% endif %}</div>
             <div class="hd-kpi-legenda">sem reabertura nem pedido de informação</div>
@@ -165,7 +165,7 @@
         </div>
     </div>
     <div class="col-6 col-md-4 col-xl-3">
-        <div class="hd-card hd-kpi" title="Resolvidos que já foram reabertos pelo solicitante / resolvidos">
+        <div class="hd-card hd-kpi" title="Fechados que já foram reabertos pelo solicitante / fechados">
             <div class="hd-kpi-rotulo">Taxa de reabertura</div>
             <div class="hd-kpi-valor">{% if dados.reabertura is not None %}{{ dados.reabertura }}%{% else %}—{% endif %}</div>
             <div class="hd-kpi-legenda">soluções recusadas pelo solicitante</div>
@@ -175,15 +175,15 @@
 
 <div class="viz-root">
     <div class="hd-card mb-4">
-        <h2 class="h6 mb-3">Volume de chamados — abertos × resolvidos {% if dados.volume.por_mes %}por mês{% else %}por dia{% endif %}</h2>
-        <div class="hd-grafico"><canvas id="graficoVolume" role="img" aria-label="Chamados abertos e resolvidos ao longo do período"></canvas></div>
+        <h2 class="h6 mb-3">Volume de chamados — abertos × fechados {% if dados.volume.por_mes %}por mês{% else %}por dia{% endif %}</h2>
+        <div class="hd-grafico"><canvas id="graficoVolume" role="img" aria-label="Chamados abertos e fechados ao longo do período"></canvas></div>
         <details class="mt-2 small">
             <summary class="text-muted-hd">Ver tabela</summary>
             <table class="table table-sm mt-2 mb-0">
-                <thead><tr><th>{% if dados.volume.por_mes %}Mês{% else %}Dia{% endif %}</th><th class="text-end">Abertos</th><th class="text-end">Resolvidos</th></tr></thead>
+                <thead><tr><th>{% if dados.volume.por_mes %}Mês{% else %}Dia{% endif %}</th><th class="text-end">Abertos</th><th class="text-end">Fechados</th></tr></thead>
                 <tbody>
-                    {% for rotulo, abertos, resolvidos in dados.volume.linhas %}
-                    <tr><td>{{ rotulo }}</td><td class="text-end">{{ abertos }}</td><td class="text-end">{{ resolvidos }}</td></tr>
+                    {% for rotulo, abertos, fechados in dados.volume.linhas %}
+                    <tr><td>{{ rotulo }}</td><td class="text-end">{{ abertos }}</td><td class="text-end">{{ fechados }}</td></tr>
                     {% endfor %}
                 </tbody>
             </table>
@@ -200,7 +200,7 @@
                 <tr>
                     <th class="ps-3">Tipo</th>
                     <th class="text-end">Abertos</th>
-                    <th class="text-end">Resolvidos</th>
+                    <th class="text-end">Fechados</th>
                     <th class="text-end">Nível de serviço</th>
                     <th class="pe-3 text-end">Tempo médio de resolução</th>
                 </tr>
@@ -210,7 +210,7 @@
                 <tr>
                     <td class="ps-3">{% tipo_badge t.tipo t.rotulo %}</td>
                     <td class="text-end">{{ t.abertos }}</td>
-                    <td class="text-end">{{ t.resolvidos }}</td>
+                    <td class="text-end">{{ t.fechados }}</td>
                     <td class="text-end">{% if t.nivel_servico is not None %}{{ t.nivel_servico }}%{% else %}—{% endif %}</td>
                     <td class="pe-3 text-end">{{ t.tempo_resolucao|duracao }}</td>
                 </tr>
@@ -285,12 +285,12 @@
 </div>
 
 <div class="hd-card p-0 table-responsive mb-4">
-    <div class="px-3 pt-3"><h2 class="h6 mb-2">Desempenho por técnico (resolvidos no período)</h2></div>
+    <div class="px-3 pt-3"><h2 class="h6 mb-2">Desempenho por técnico (fechados no período)</h2></div>
     <table class="table hd-table align-middle mb-0">
         <thead>
             <tr>
                 <th class="ps-3">Técnico</th>
-                <th class="text-end">Resolvidos</th>
+                <th class="text-end">Fechados</th>
                 <th class="text-end">Nível de serviço</th>
                 <th class="text-end">Taxa de reabertura</th>
                 <th class="text-end">Tempo médio de resolução</th>
@@ -301,14 +301,14 @@
             {% for t in dados.por_tecnico %}
             <tr>
                 <td class="ps-3">{{ t.nome }}</td>
-                <td class="text-end">{{ t.resolvidos }}</td>
+                <td class="text-end">{{ t.fechados }}</td>
                 <td class="text-end">{% if t.nivel_servico is not None %}{{ t.nivel_servico }}%{% else %}—{% endif %}</td>
                 <td class="text-end">{% if t.reabertura is not None %}{{ t.reabertura }}%{% else %}—{% endif %}</td>
                 <td class="text-end">{{ t.tempo_medio|duracao }}</td>
                 <td class="pe-3 text-end">{% if t.csat_media %}{{ t.csat_media|floatformat:1 }} / 5{% else %}—{% endif %}</td>
             </tr>
             {% empty %}
-            <tr><td colspan="6" class="text-center text-muted-hd py-4">Nenhum chamado resolvido no período.</td></tr>
+            <tr><td colspan="6" class="text-center text-muted-hd py-4">Nenhum chamado fechado no período.</td></tr>
             {% endfor %}
         </tbody>
     </table>
@@ -334,7 +334,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     var eixoInteiro = { beginAtZero: true, ticks: { precision: 0 }, grid: { color: cor('--viz-grid') } };
 
-    // Linha: abertos x resolvidos (2 séries, legenda + crosshair/tooltip por índice).
+    // Linha: abertos x fechados (2 séries, legenda + crosshair/tooltip por índice).
     var volume = ler('dadosVolume');
     new Chart(document.getElementById('graficoVolume'), {
         type: 'line',
@@ -343,7 +343,7 @@ document.addEventListener('DOMContentLoaded', function () {
             datasets: [
                 { label: 'Abertos', data: volume.abertos, borderColor: cor('--series-1'), backgroundColor: cor('--series-1'),
                   borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, tension: 0.25 },
-                { label: 'Resolvidos', data: volume.resolvidos, borderColor: cor('--series-2'), backgroundColor: cor('--series-2'),
+                { label: 'Fechados', data: volume.fechados, borderColor: cor('--series-2'), backgroundColor: cor('--series-2'),
                   borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, tension: 0.25 }
             ]
         },
@@ -424,7 +424,7 @@ function hdPeriodo(select) {
 
 <div class="row g-3 mb-4">
     <div class="col-6 col-md-4 col-xl">
-        <div class="hd-card hd-kpi"><div class="hd-kpi-rotulo">Em aberto</div><div class="hd-kpi-valor">{{ dados.em_aberto }}</div><div class="hd-kpi-legenda">chamados não resolvidos</div></div>
+        <div class="hd-card hd-kpi"><div class="hd-kpi-rotulo">Em aberto</div><div class="hd-kpi-valor">{{ dados.em_aberto }}</div><div class="hd-kpi-legenda">chamados não fechados</div></div>
     </div>
     <div class="col-6 col-md-4 col-xl">
         <div class="hd-card hd-kpi"><div class="hd-kpi-rotulo">Sem atribuição</div><div class="hd-kpi-valor">{{ dados.sem_atribuicao }}</div><div class="hd-kpi-legenda">aguardando um técnico</div></div>
@@ -434,9 +434,6 @@ function hdPeriodo(select) {
     </div>
     <div class="col-6 col-md-4 col-xl">
         <div class="hd-card hd-kpi"><div class="hd-kpi-rotulo">Aguardando solicitante</div><div class="hd-kpi-valor">{{ dados.aguardando_solicitante }}</div><div class="hd-kpi-legenda">SLA pausado</div></div>
-    </div>
-    <div class="col-6 col-md-4 col-xl">
-        <div class="hd-card hd-kpi"><div class="hd-kpi-rotulo">Aguardando confirmação</div><div class="hd-kpi-valor">{{ dados.aguardando_confirmacao }}</div><div class="hd-kpi-legenda">resolvidos sem resposta</div></div>
     </div>
 </div>
 
