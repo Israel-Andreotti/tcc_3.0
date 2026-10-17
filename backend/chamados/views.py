@@ -182,7 +182,12 @@ class ChamadoListView(LoginRequiredMixin, ListView):
         context['categoria_selecionada'] = self.request.GET.get('categoria', '')
         context['tipo_selecionado'] = self.request.GET.get('tipo', '')
         context['tipo_choices'] = TipoChamado.choices
-        context['status_choices'] = Chamado.Status.choices
+        # A fila da equipe não mostra fechados (eles ficam no histórico), então o filtro também não
+        # oferece essa opção; o solicitante vê os próprios fechados em "Meus chamados".
+        context['status_choices'] = [
+            (valor, rotulo) for valor, rotulo in Chamado.Status.choices
+            if usuario.is_solicitante() or valor != Chamado.Status.FECHADO
+        ]
         context['categorias'] = Categoria.objects.order_by('ordem', 'nome')
         context['ordem_selecionada'] = self.get_ordem()
         context['ordenacoes'] = [(chave, rotulo) for chave, (rotulo, _) in ORDENACOES_CHAMADO.items()]
