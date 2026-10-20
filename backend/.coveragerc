@@ -1,0 +1,11 @@
+# Cobertura dos testes: coverage run manage.py test && coverage report
+[run]
+source = chamados, ativos, usuarios, indicadores, core
+omit =
+    */migrations/*
+    */apps.py
+    */admin.py
+
+[report]
+skip_empty = True
+show_missing = False

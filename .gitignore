@@ -7,3 +7,7 @@ staticfiles/
 .vscode/
 .idea/
 .claude/
+
+# Cobertura dos testes (gerados pelo coverage)
+.coverage
+htmlcov/

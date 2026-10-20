@@ -10,10 +10,14 @@ All Django commands run from `backend/` with the root `venv/` activated.
 cd backend
 python manage.py runserver          # or double-click run.bat at repo root
 python manage.py makemigrations && python manage.py migrate
-python manage.py test               # real tests only in chamados/tests.py (incl. a concurrency test for "Atribuir a mim"); other tests.py are stubs
-python manage.py test chamados      # single app
+python manage.py test               # whole suite (backend/tests/, ~167 tests, needs the local Postgres)
+python manage.py test tests.chamados.test_sla     # one module
 python manage.py check
+pip install -r requirements-dev.txt # dev-only deps (coverage); requirements.txt is what Railway installs
+coverage run manage.py test && coverage report   # config in backend/.coveragerc
 ```
+
+Tests live in a separate package, **`backend/tests/`** (not in the apps), split by area: `chamados/` (sla, codigo, fluxo_atendimento, fechamento, atribuicao incl. a real concurrency test with threads, permissoes, fila, catalogo), `ativos/`, `usuarios/`, `indicadores/` (formulas checked against a scenario with known results), `core/` (template filters/tags, dashboard). GitHub Actions (`.github/workflows/testes.yml`) runs `check`, `makemigrations --check` and the suite with coverage against a Postgres service on every push to `master` and on PRs — it does not block the Railway deploy, which triggers on push independently. Build data with `tests/fabricas.py` (`criar_chamado`, `criar_tecnico`, `cliente(usuario)`, `mensagens(resposta)`…): it uses unique names because the test DB already has migration-seeded data (catalog, setores, demo chamados) — tests that need an exact queue/metrics start with `Chamado.objects.all().delete()`. Time-dependent rules are tested by patching `django.utils.timezone.now`. The local `.env` may set `LOGIN_RAPIDO=True`, which disables the forced password change — tests of that rule use `@override_settings(LOGIN_RAPIDO=False)`.
 
 Config comes from `backend/.env` via `python-decouple` (template: `backend/.env.example`). For local testing, `LOGIN_RAPIDO=True` in `.env` adds an "Entrar como..." one-click passwordless login to the login page (`usuarios:login_rapido`) and disables the forced password change; `settings.LOGIN_RAPIDO` is `DEBUG and LOGIN_RAPIDO`, so it can never be active in production (`DEBUG=False`) — keep it that way. PostgreSQL only (no SQLite): `config/settings.py` uses `DATABASE_URL` when set (prod/Railway), otherwise the `DB_*` variables (local Postgres, database `tcc_chamados`).
 

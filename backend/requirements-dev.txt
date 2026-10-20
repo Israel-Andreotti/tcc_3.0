@@ -1,0 +1,4 @@
+-r requirements.txt
+
+# Só para desenvolvimento (não vai para o Railway): medição de cobertura dos testes.
+coverage==7.16.2
