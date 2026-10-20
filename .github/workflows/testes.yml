@@ -53,6 +53,10 @@ jobs:
           python manage.py check
           python manage.py makemigrations --check --dry-run
 
+      # Como no start.sh: o WhiteNoise usa um manifest dos estáticos, sem ele as páginas dão 500.
+      - name: Coletar arquivos estáticos
+        run: python manage.py collectstatic --no-input
+
       - name: Rodar os testes
         run: |
           coverage run manage.py test
