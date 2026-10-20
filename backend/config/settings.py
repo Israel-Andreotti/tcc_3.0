@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
+from datetime import timedelta
 from pathlib import Path
 from decouple import Csv, config
 
@@ -40,6 +41,14 @@ if not DEBUG:
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
+    # HSTS: o navegador passa a usar só HTTPS neste domínio. Sem includeSubDomains/preload, porque
+    # o domínio-pai (up.railway.app) não é nosso.
+    SECURE_HSTS_SECONDS = config('SECURE_HSTS_SECONDS', default=60 * 60 * 24 * 30, cast=int)
+    # IP real do cliente para o bloqueio de login (o proxy do Railway informa em X-Real-IP).
+    AXES_IPWARE_META_PRECEDENCE_ORDER = ('HTTP_X_REAL_IP', 'REMOTE_ADDR')
+    # check --deploy: o Railway já redireciona HTTP → HTTPS na borda (SECURE_SSL_REDIRECT aqui quebraria
+    # o healthcheck, que chega por HTTP); includeSubDomains/preload não cabem num subdomínio do Railway.
+    SILENCED_SYSTEM_CHECKS = ['security.W005', 'security.W008', 'security.W021']
 
 
 # Application definition
@@ -51,6 +60,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'axes',
 
     # apps do projeto
     'core',
@@ -69,7 +79,10 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'core.middleware.ExpirarSessaoInativaMiddleware',
     'core.middleware.ForcarTrocaSenhaMiddleware',
+    # Por último, como pede o django-axes: bloqueia o login depois de várias senhas erradas.
+    'axes.middleware.AxesMiddleware',
 ]
 
 ROOT_URLCONF = 'config.urls'
@@ -119,6 +132,19 @@ else:
 
 AUTH_USER_MODEL = 'usuarios.Usuario'
 
+AUTHENTICATION_BACKENDS = [
+    'axes.backends.AxesStandaloneBackend',  # recusa a tentativa se o usuário/IP estiver bloqueado
+    'django.contrib.auth.backends.ModelBackend',
+]
+
+# Proteção contra força bruta no login (django-axes): 5 senhas erradas seguidas para o mesmo
+# usuário a partir do mesmo IP bloqueiam novas tentativas por 15 minutos. Um login certo zera a conta.
+AXES_FAILURE_LIMIT = 5
+AXES_COOLOFF_TIME = timedelta(minutes=15)
+AXES_LOCKOUT_PARAMETERS = [['username', 'ip_address']]
+AXES_RESET_ON_SUCCESS = True
+AXES_LOCKOUT_TEMPLATE = 'usuarios/login_bloqueado.html'
+
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
@@ -167,6 +193,12 @@ STORAGES = {
     },
 }
 
+# Sessão: termina ao fechar o navegador, depois de SESSAO_INATIVIDADE_MINUTOS sem uso (computadores
+# compartilhados no hospital; ver core.middleware.ExpirarSessaoInativaMiddleware) e, no máximo, em 12 horas.
+SESSION_EXPIRE_AT_BROWSER_CLOSE = True
+SESSION_COOKIE_AGE = 60 * 60 * 12
+SESSAO_INATIVIDADE_MINUTOS = config('SESSAO_INATIVIDADE_MINUTOS', default=30, cast=int)
+
 LOGIN_URL = 'usuarios:login'
 LOGIN_REDIRECT_URL = 'core:dashboard'
 LOGOUT_REDIRECT_URL = 'usuarios:login'
@@ -175,3 +207,23 @@ LOGOUT_REDIRECT_URL = 'usuarios:login'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# Logs no console (o Railway guarda a saída do processo). Sem isto, com DEBUG=False o Django não
+# registra em lugar nenhum o traceback de um erro 500.
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'simples': {'format': '{asctime} {levelname} {name}: {message}', 'style': '{'},
+    },
+    'handlers': {
+        'console': {'class': 'logging.StreamHandler', 'formatter': 'simples'},
+    },
+    'root': {'handlers': ['console'], 'level': 'WARNING'},
+    'loggers': {
+        # django.request registra 4xx como WARNING e 5xx como ERROR; só os erros interessam aqui.
+        'django.request': {'handlers': ['console'], 'level': 'ERROR', 'propagate': False},
+        'django': {'handlers': ['console'], 'level': config('LOG_LEVEL', default='WARNING'), 'propagate': False},
+        'axes': {'handlers': ['console'], 'level': 'WARNING', 'propagate': False},
+    },
+}

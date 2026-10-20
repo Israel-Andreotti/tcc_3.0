@@ -10,7 +10,7 @@ All Django commands run from `backend/` with the root `venv/` activated.
 cd backend
 python manage.py runserver          # or double-click run.bat at repo root
 python manage.py makemigrations && python manage.py migrate
-python manage.py test               # whole suite (backend/tests/, ~167 tests, needs the local Postgres)
+python manage.py test               # whole suite (backend/tests/, ~178 tests, needs the local Postgres)
 python manage.py test tests.chamados.test_sla     # one module
 python manage.py check
 pip install -r requirements-dev.txt # dev-only deps (coverage); requirements.txt is what Railway installs
@@ -23,16 +23,16 @@ Config comes from `backend/.env` via `python-decouple` (template: `backend/.env.
 
 ## Deploy (Railway)
 
-Railway project (Hobby plan) with two services: `Postgres` and the GitHub repo (`tcc_3.0`), auto-deployed on every push to `master`; live at https://tcc30-production.up.railway.app. Service settings live in the Railway UI (not in the repo): Root Directory `/backend`, start command `bash start.sh`, healthcheck path `/usuarios/login/`, domain on port 8080. Env vars: `DATABASE_URL=${{Postgres.DATABASE_URL}}`, `DEBUG=False`, `ALLOWED_HOSTS=.up.railway.app,healthcheck.railway.app` (the healthcheck host is required or Django answers 400 and the deploy fails), `CSRF_TRUSTED_ORIGINS=https://*.up.railway.app`, `PORT=8080`, `SECRET_KEY`, `DJANGO_SUPERUSER_*`. Railpack builds it (Python from `.python-version`). `start.sh` runs on every boot: `collectstatic` → `migrate` → upsert the `DJANGO_SUPERUSER_USERNAME` user as superuser/administrador and **reset its password from `DJANGO_SUPERUSER_PASSWORD`** → gunicorn on `$PORT`. `.gitattributes` keeps `*.sh`/`Procfile` with LF endings (repo is developed on Windows). With `DEBUG=False`, settings trust `X-Forwarded-Proto` and use secure cookies; `ALLOWED_HOSTS`/`CSRF_TRUSTED_ORIGINS` come from env. Static files via WhiteNoise (`CompressedManifestStaticFilesStorage` — a template referencing a missing static file will 500 in prod). There is no file upload feature (attachments were removed on purpose); `chamados/migrations/0008_anexo.py` keeps a local `anexo_upload_path` only so the historical migration still loads, and `0014_remove_anexo` drops the table.
+Railway project (Hobby plan) with two services: `Postgres` and the GitHub repo (`tcc_3.0`), auto-deployed on every push to `master`; live at https://tcc30-production.up.railway.app. Service settings live in the Railway UI (not in the repo): Root Directory `/backend`, start command `bash start.sh`, healthcheck path `/usuarios/login/`, domain on port 8080. Env vars: `DATABASE_URL=${{Postgres.DATABASE_URL}}`, `DEBUG=False`, `ALLOWED_HOSTS=.up.railway.app,healthcheck.railway.app` (the healthcheck host is required or Django answers 400 and the deploy fails), `CSRF_TRUSTED_ORIGINS=https://*.up.railway.app`, `PORT=8080`, `SECRET_KEY`, `DJANGO_SUPERUSER_*`. Railpack builds it (Python from `.python-version`). `start.sh` runs on every boot: `collectstatic` → `migrate` → upsert the `DJANGO_SUPERUSER_USERNAME` user as superuser/administrador and **reset its password from `DJANGO_SUPERUSER_PASSWORD`** → gunicorn on `$PORT`. `.gitattributes` keeps `*.sh`/`Procfile` with LF endings (repo is developed on Windows). With `DEBUG=False`, settings trust `X-Forwarded-Proto`, use secure cookies and HSTS (30 days, no subdomains/preload), and silence `check --deploy` W005/W008/W021 on purpose — Railway's edge already redirects HTTP→HTTPS, and `SECURE_SSL_REDIRECT` would break the healthcheck (plain HTTP); `ALLOWED_HOSTS`/`CSRF_TRUSTED_ORIGINS` come from env. Static files via WhiteNoise (`CompressedManifestStaticFilesStorage` — a template referencing a missing static file will 500 in prod). There is no file upload feature (attachments were removed on purpose); `chamados/migrations/0008_anexo.py` keeps a local `anexo_upload_path` only so the historical migration still loads, and `0014_remove_anexo` drops the table. `LOGGING` sends Django errors (with tracebacks) and axes lockouts to the console = Railway Deploy Logs. Custom `403.html`/`404.html` extend `_erro.html`; `500.html` is self-contained (no base.html, static or DB). `backup_railway.bat` (repo root) does a `pg_dump` of production using the Postgres `DATABASE_PUBLIC_URL`.
 
 ## Architecture
 
 ```
 backend/
   config/     settings, root urls
-  core/       dashboard, RBAC mixins, ForcarTrocaSenhaMiddleware, template filters (chamado_extras)
+  core/       dashboard, RBAC mixins, middlewares (ExpirarSessaoInativa, ForcarTrocaSenha), template filters (chamado_extras)
   usuarios/   custom user model Usuario (AUTH_USER_MODEL), Setor, login/senha, user management
-  chamados/   Categoria/Subcategoria (service catalog), SLAPrioridade, Chamado, Comentario, ProcedimentoEntry
+  chamados/   Categoria/Subcategoria (service catalog), SLAPrioridade, Chamado, ProcedimentoEntry, EventoChamado
   ativos/     Ativo (equipment) and MovimentacaoAtivo
   indicadores/ management dashboard (no models): metricas.py computes everything, one staff-only view
   templates/  all templates, per app subfolder; base.html holds the navbar + shared JS (user info modal, etc.)
@@ -51,6 +51,8 @@ Views are class-based (generic CBVs, plus plain `View` with `post()` for actions
 `super_admin=True` (granted only via Django admin) forces `perfil=administrador` in `save()`, hides the user from the user list, and blocks edit/reset/deactivate from the app UI. Other admins have no restrictions between each other.
 
 Login redirects by role (`perfil_redirect_url`): staff → `chamados:list`, solicitante → `chamados:create`. New users and password resets get a random temporary password shown once on `usuario_resumo.html` and `deve_trocar_senha=True`; `ForcarTrocaSenhaMiddleware` then locks them into `usuarios:trocar_senha` until changed. `matricula` is auto-generated sequentially starting at `100001`.
+
+**Login/session security**: `django-axes` locks a username+IP pair for 15 min after 5 wrong passwords (`AXES_*` in settings, `AxesStandaloneBackend` first in `AUTHENTICATION_BACKENDS`, lockout page `usuarios/login_bloqueado.html`, HTTP 429; in prod the client IP comes from Railway's `X-Real-IP`). Login rápido calls `login(..., backend=ModelBackend)` explicitly — keep it, since there are two backends. Sessions end at browser close, after `SESSAO_INATIVIDADE_MINUTOS` (default 30) without use, and at most after 12h. `ExpirarSessaoInativaMiddleware` keeps `ultima_atividade` in the session; the polling endpoints (`notificacoes`, `fila_versao`) don't count as use, and when they hit an expired session they answer 401 so the page JS reloads — that normal request logs out and redirects to login with a message. Tests that make wrong-password logins wrap them in `assertLogs('axes')`.
 
 ### Chamados — key business rules
 
@@ -85,4 +87,4 @@ Login redirects by role (`perfil_redirect_url`): staff → `chamados:list`, soli
 - Model choices use nested `TextChoices` (`Usuario.Perfil`, `Chamado.Status`, `Prioridade`); templates compare against the raw string values (e.g. `user.perfil == 'administrador'`).
 - Form widgets get Bootstrap classes (`form-control` / `form-select`) in the form's `Meta.widgets`, not in templates.
 - Data seeding is done in data migrations, not fixtures.
-- `README.md` is partly outdated (e.g. says ativos isn't integrated; omits super_admin, setores, SLA) — trust the code.
+- `README.md` is the user-facing overview (features, setup, deploy, backup) — keep it in sync when adding features. The `Comentario` model was removed (`0024` converted any rows into public `ProcedimentoEntry`, `0025` dropped it); `Chamado.ativo` is still unused on purpose (reserved for ITIL point 8).

@@ -1,135 +1,173 @@
-# Sistema de Gerenciamento de Chamados
+# Helpdesk TI — Sistema de Gerenciamento de Chamados
 
-TCC — sistema de gerenciamento de chamados (service desk) com Django full-stack (backend + frontend via templates), PostgreSQL e RBAC por perfil de usuário (administrador, atendente, solicitante).
+TCC: central de serviços (service desk) de TI voltada a um ambiente hospitalar, com abertura e
+atendimento de chamados, SLA, catálogo de serviços, gestão de ativos e painel de indicadores,
+seguindo práticas do ITIL 4.
 
-## Pré-requisitos
+**Em produção:** https://tcc30-production.up.railway.app
 
-- Python 3.11+
-- PostgreSQL 14+
+Django 5.2 full-stack (templates renderizados no servidor + Bootstrap 5), PostgreSQL, sem API REST
+nem frontend separado.
 
-## Instalação
+## Funcionalidades
+
+**Chamados**
+- Abertura pelo catálogo de serviços (categoria → subcategoria). Cada subcategoria define a
+  **prioridade** e o **tipo** ITIL do chamado: *incidente* (algo parou de funcionar) ou
+  *requisição* (pedido de algo previsto). O usuário nunca escolhe a prioridade; setores marcados
+  como **críticos** (UTI, Emergência...) sobem um nível.
+- Código legível por tipo: `INC000001`, `REQ000001`.
+- **SLA** por prioridade (horas editáveis pelo administrador), desconto para solicitantes VIP,
+  barra de consumo e alerta de estouro. O SLA **pausa** enquanto o chamado aguarda o solicitante.
+- Fila da equipe com filtros, busca, seis ordenações (urgência, % do SLA consumido, prioridade...)
+  e **atualização automática** quando chega algo novo. "Atribuir a mim" é seguro contra dois
+  técnicos clicando ao mesmo tempo.
+- Fluxo: aberto → em andamento → (aguardando solicitante) → fechado. Depois de fechado, o
+  solicitante pode **reabrir** em até 1 dia e **avaliar** o atendimento (1 a 5 estrelas).
+- Linha do tempo com procedimentos públicos, notas internas (só a equipe vê) e o **log de eventos**
+  de todo o ciclo de vida (quem fez o quê e quando).
+- Notificações dentro do sistema: aviso ao solicitante quando precisam dele e avisos ao técnico
+  quando o solicitante responde.
+
+**Ativos**
+- Cadastro com número de patrimônio automático; cada ativo fica em um setor **ou** com um funcionário.
+- Movimentação pelo chamado (entrega e devolução), validada ao vivo e efetivada só quando o chamado
+  é fechado.
+- **Trilha de auditoria** completa de toda mudança de lotação (origem, destino, quem e quando).
+
+**Indicadores** (`/indicadores/`)
+- **Visão executiva** (administrador): volume, nível de serviço, tempo até a primeira resposta,
+  tempos de atendimento e resolução, resolução no primeiro contato, taxa de reabertura, satisfação
+  (CSAT), comparação incidentes × requisições e desempenho por técnico, setor e categoria.
+- **Visão operacional** (técnicos): fila agora, chamados sem técnico, SLA estourado, carga e
+  chamados parados por técnico.
+- Filtros por período, técnico, setor, categoria e tipo.
+
+**Usuários e segurança**
+- Perfis: solicitante, técnico e administrador (detalhes abaixo).
+- Senha temporária gerada pelo sistema e troca obrigatória no primeiro acesso.
+- Bloqueio de login por 15 minutos após 5 senhas erradas seguidas.
+- Sessão encerrada após 30 minutos sem uso e ao fechar o navegador.
+- Em produção: HTTPS com HSTS, cookies seguros e logs de erro.
+
+## Perfis de usuário
+
+| Perfil | O que pode fazer |
+|---|---|
+| **Solicitante** | Abre chamados e acompanha apenas os próprios; responde, reabre e avalia |
+| **Técnico** | Atende a fila, gerencia ativos e usuários, vê a visão operacional dos indicadores |
+| **Administrador** | Tudo do técnico + catálogo de serviços, SLA, setores, exclusão de ativos e visão executiva |
+
+Existe ainda o **superadministrador** (concedido apenas pelo admin do Django), que não aparece na
+lista de usuários e não pode ser alterado pela aplicação.
+
+## Estrutura do projeto
+
+```
+backend/
+├── config/        # settings, urls raiz, wsgi
+├── core/          # mixins de permissão (RBAC), middlewares (troca de senha, sessão inativa), filtros de template
+├── usuarios/      # usuário customizado (perfil, matrícula, setor), setores, login e gestão de usuários
+├── chamados/      # catálogo, SLA, chamados, procedimentos, log de eventos e todo o fluxo de atendimento
+├── ativos/        # ativos e movimentações (trilha de auditoria)
+├── indicadores/   # painel de gestão; todas as fórmulas em metricas.py
+├── templates/     # templates HTML por app
+├── static/        # CSS próprio
+└── tests/         # testes automatizados, separados por área
+docs/melhorias-itil.md   # análise ITIL: o que já atende e melhorias propostas
+```
+
+## Rodando localmente
+
+Pré-requisitos: **Python 3.11** e **PostgreSQL 14+**.
 
 ```bash
 # na raiz do projeto
 python -m venv venv
-
-# ativar o ambiente virtual
-venv\Scripts\activate        # Windows (cmd/PowerShell)
-source venv/Scripts/activate # Windows (Git Bash)
-source venv/bin/activate     # Linux/Mac
+venv\Scripts\activate          # Windows (cmd/PowerShell)
+source venv/Scripts/activate   # Windows (Git Bash)
+source venv/bin/activate       # Linux/Mac
 
 cd backend
-pip install -r requirements.txt
-```
-
-## Configuração
-
-Copie o arquivo de exemplo e ajuste se necessário:
-
-```bash
-cp .env.example .env
-```
-
-Variáveis disponíveis no `.env`:
-
-| Variável | Descrição | Padrão |
-|---|---|---|
-| `SECRET_KEY` | Chave secreta do Django | valor de desenvolvimento incluso |
-| `DEBUG` | Modo debug | `True` |
-| `ALLOWED_HOSTS` | Hosts permitidos, separados por vírgula | `localhost,127.0.0.1` |
-| `DB_NAME` / `DB_USER` / `DB_PASSWORD` / `DB_HOST` / `DB_PORT` | Credenciais do PostgreSQL local | `tcc_chamados` / `postgres` / `postgres` / `localhost` / `5432` |
-
-## Banco de dados
-
-O sistema usa PostgreSQL em todos os ambientes.
-
-1. Crie o banco: `createdb tcc_chamados` (ou via `psql`/pgAdmin)
-2. No `.env`, ajuste as variáveis `DB_*` com as credenciais do seu PostgreSQL
-
-Em produção, a variável `DATABASE_URL` (connection string do Postgres hospedado) tem prioridade sobre as `DB_*`.
-
-Depois, rode as migrations:
-
-```bash
-cd backend
+pip install -r requirements-dev.txt   # dependências da aplicação + ferramentas de teste
+cp .env.example .env                  # ajuste as credenciais do PostgreSQL
+createdb tcc_chamados                 # ou crie o banco pelo pgAdmin
 python manage.py migrate
-```
-
-A migration `chamados/migrations/0003_seed_catalogo.py` já popula automaticamente o catálogo de categorias/subcategorias de chamados.
-
-## Criando um usuário administrador
-
-```bash
 python manage.py createsuperuser
-```
-
-No admin (`/admin/`), edite o usuário criado e defina o campo **perfil** como `administrador` (por padrão todo novo usuário é criado como `solicitante`).
-
-## Rodando o projeto
-
-**Windows — atalho:** dê duplo clique em `run.bat` na raiz do projeto (ou rode `.\run.bat` no terminal). Ele entra em `backend/`, ativa o venv e sobe o servidor automaticamente.
-
-**Manual:**
-
-```bash
-cd backend
 python manage.py runserver
 ```
 
-Acesse:
-- **http://127.0.0.1:8000/usuarios/login/** — login (redireciona conforme o perfil: técnico/administrador vão para a fila de chamados, solicitante vai direto para abrir um chamado)
-- **http://127.0.0.1:8000/admin/** — painel administrativo (gerenciar usuários, categorias, chamados)
+No Windows, depois da instalação, basta dar duplo clique em `run.bat`, na raiz do projeto.
+
+Acesse http://127.0.0.1:8000/usuarios/login/. Técnicos e administradores entram na fila de
+chamados e solicitantes vão direto para a abertura de chamado. O admin do Django fica em `/admin/`.
+
+As migrations já criam dados iniciais: catálogo de serviços, prazos de SLA, setores e alguns
+chamados e usuários de demonstração.
+
+### Variáveis do `.env`
+
+| Variável | Para que serve | Padrão |
+|---|---|---|
+| `SECRET_KEY` | Chave secreta do Django | valor de desenvolvimento |
+| `DEBUG` | Modo de desenvolvimento | `True` |
+| `ALLOWED_HOSTS` / `CSRF_TRUSTED_ORIGINS` | Domínios aceitos | `localhost,127.0.0.1` / vazio |
+| `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT` | PostgreSQL local | `tcc_chamados`, `postgres`, `postgres`, `localhost`, `5432` |
+| `DATABASE_URL` | Banco de produção; tem prioridade sobre as `DB_*` | — |
+| `LOGIN_RAPIDO` | Só para testes locais: botões "Entrar como..." sem senha. Só funciona com `DEBUG=True` | `False` |
+| `SESSAO_INATIVIDADE_MINUTOS` | Minutos sem uso até a sessão expirar | `30` |
+| `LOG_LEVEL` | Nível dos logs do Django | `WARNING` |
+
+## Testes
+
+```bash
+cd backend
+python manage.py test                              # suíte completa (precisa do PostgreSQL local)
+python manage.py test tests.chamados.test_sla      # um módulo
+coverage run manage.py test && coverage report     # com cobertura
+```
+
+São cerca de 180 testes em `backend/tests/`, separados por área (SLA, códigos, fluxo de
+atendimento, fechamento, atribuição concorrente, permissões, fila, catálogo, ativos, usuários,
+indicadores e segurança), com cobertura de 99%. As fórmulas dos indicadores são conferidas contra
+um cenário com resultados calculados à mão.
+
+A cada push na `master` e em cada pull request, o **GitHub Actions** sobe um PostgreSQL, verifica
+o projeto e as migrations e roda a suíte com cobertura (`.github/workflows/testes.yml`).
 
 ## Deploy (Railway)
 
-O sistema está publicado no [Railway](https://railway.com) (plano Hobby), em um projeto com dois serviços: **Postgres** e o repositório **tcc_3.0**. Todo push na branch `master` gera um deploy automático.
+Projeto no [Railway](https://railway.com) (plano Hobby) com dois serviços: **Postgres** e o
+repositório. Todo push na `master` gera um deploy automático.
 
-Configuração do serviço `tcc_3.0` (Settings):
-
-| Campo | Valor |
+| Configuração do serviço | Valor |
 |---|---|
 | Root Directory | `/backend` |
 | Custom Start Command | `bash start.sh` |
 | Healthcheck Path | `/usuarios/login/` |
 | Public Networking | domínio gerado na porta `8080` |
 
-Variáveis de ambiente:
-
-| Variável | Valor |
+| Variável de ambiente | Valor |
 |---|---|
-| `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` (referência ao Postgres do projeto) |
+| `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` |
 | `DEBUG` | `False` |
-| `ALLOWED_HOSTS` | `.up.railway.app,healthcheck.railway.app` |
+| `ALLOWED_HOSTS` | `.up.railway.app,healthcheck.railway.app` (o segundo é exigido pelo healthcheck) |
 | `CSRF_TRUSTED_ORIGINS` | `https://*.up.railway.app` |
 | `PORT` | `8080` |
-| `SECRET_KEY` | valor aleatório (`python -c "import secrets; print(secrets.token_urlsafe(50))"`) |
-| `DJANGO_SUPERUSER_USERNAME` / `DJANGO_SUPERUSER_PASSWORD` / `DJANGO_SUPERUSER_EMAIL` | administrador inicial |
+| `SECRET_KEY` | valor aleatório: `python -c "import secrets; print(secrets.token_urlsafe(50))"` |
+| `DJANGO_SUPERUSER_USERNAME` / `_PASSWORD` / `_EMAIL` | administrador inicial |
 
-A cada inicialização, `backend/start.sh` roda `collectstatic`, aplica as migrations, cria/atualiza o administrador (a senha é sincronizada com `DJANGO_SUPERUSER_PASSWORD`) e sobe o gunicorn na porta `$PORT`. O banco de produção é independente do banco local de desenvolvimento.
+A cada inicialização, `backend/start.sh` roda `collectstatic`, aplica as migrations,
+cria ou atualiza o administrador inicial (sincronizando a senha com `DJANGO_SUPERUSER_PASSWORD`) e
+sobe o gunicorn. Os logs de erro aparecem na aba **Deploy Logs** do serviço.
 
-## Estrutura do projeto
+### Backup do banco de produção
 
+`backup_railway.bat`, na raiz do projeto, salva um `.dump` do banco do Railway em
+`Documents\tcc_backups`. O script pede a **DATABASE_PUBLIC_URL**, que fica em
+Railway > Postgres > Variables. Para restaurar num banco local:
+
+```bash
+createdb tcc_restaurado
+pg_restore --no-owner --no-acl -d tcc_restaurado caminho\do\arquivo.dump
 ```
-backend/
-├── config/          # settings, urls raiz, wsgi/asgi
-├── core/            # dashboard, mixins de RBAC (AdministradorRequiredMixin, AtendenteRequiredMixin)
-├── usuarios/        # model de usuário customizado (perfil), login/logout
-├── chamados/        # models de Categoria, Subcategoria, Chamado, Comentario + views/forms/templates
-├── ativos/          # model de Ativo (cadastro de equipamentos) — ainda não integrado às views
-└── templates/       # templates HTML (Bootstrap 5 via CDN)
-```
-
-## Perfis de usuário
-
-| Perfil | Acesso |
-|---|---|
-| `solicitante` | Abre chamados e acompanha apenas os próprios |
-| `atendente` (exibido como "Técnico") | Vê e gerencia (muda status/prioridade/atribuição) todos os chamados |
-| `administrador` | Mesmo acesso do técnico + admin do Django |
-
-## Testando sem escrever código
-
-- Interface web: siga [Rodando o projeto](#rodando-o-projeto) e use o navegador
-- Django admin (`/admin/`): CRUD direto nos models, sem passar pelos formulários da aplicação
-- Shell interativo: `python manage.py shell`
-- Testes automatizados: `python manage.py test`

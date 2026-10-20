@@ -114,7 +114,8 @@ class LoginETrocaDeSenhaTests(TestCase):
         self.assertRedirects(self.login(criar_solicitante()), reverse('chamados:create'), fetch_redirect_response=False)
 
     def test_senha_errada(self):
-        resposta = self.login(criar_solicitante(), senha='errada')
+        with self.assertLogs('axes', level='WARNING'):  # a falha fica registrada no log
+            resposta = self.login(criar_solicitante(), senha='errada')
 
         self.assertEqual(resposta.status_code, 200)
         self.assertFalse(resposta.wsgi_request.user.is_authenticated)

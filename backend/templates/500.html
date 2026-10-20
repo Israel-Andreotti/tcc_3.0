@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+{% comment %}
+Erro interno: renderizado sem contexto (sem usuário nem request) e sem depender de arquivos
+estáticos nem do banco, que podem ser justamente a causa do erro. Por isso não estende base.html.
+{% endcomment %}
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Erro no servidor · Helpdesk TI</title>
+    <style>
+        body {
+            margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+            background: #f4f6fb; color: #1e293b; padding: 16px;
+            font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        }
+        .cartao {
+            background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 32px;
+            max-width: 440px; text-align: center; box-shadow: 0 1px 3px rgba(15, 23, 42, .06);
+        }
+        .icone {
+            width: 56px; height: 56px; border-radius: 14px; margin: 0 auto 16px; color: #fff;
+            background: linear-gradient(135deg, #2563eb, #60a5fa); font-size: 28px; line-height: 56px;
+        }
+        .codigo { color: #64748b; margin: 0 0 4px; }
+        h1 { font-size: 1.35rem; margin: 0 0 12px; }
+        p { color: #64748b; line-height: 1.5; }
+        a {
+            display: inline-block; margin-top: 8px; padding: 8px 16px; border-radius: 8px;
+            background: #2563eb; color: #fff; text-decoration: none; font-weight: 500;
+        }
+        a:hover { background: #1d4ed8; }
+    </style>
+</head>
+<body>
+    <div class="cartao">
+        <div class="icone" aria-hidden="true">!</div>
+        <p class="codigo">Erro 500</p>
+        <h1>Algo deu errado no servidor</h1>
+        <p>O erro foi registrado e não foi culpa sua. Tente de novo em alguns instantes; se continuar, avise a equipe de TI.</p>
+        <a href="/">Voltar ao início</a>
+    </div>
+</body>
+</html>

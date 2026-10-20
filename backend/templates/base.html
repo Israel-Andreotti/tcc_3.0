@@ -300,7 +300,11 @@
         function consultar() {
             if (document.hidden) return;  // aba em segundo plano: não consulta à toa
             fetch(container.dataset.url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
-                .then(function (resposta) { return resposta.ok ? resposta.json() : null; })
+                .then(function (resposta) {
+                    // 401: a sessão expirou por inatividade; recarregar leva ao login com o aviso.
+                    if (resposta.status === 401) { window.location.reload(); return null; }
+                    return resposta.ok ? resposta.json() : null;
+                })
                 .then(function (dados) {
                     if (!dados) return;
                     if (badge) {

@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Categoria, Chamado, Comentario, EventoChamado, ProcedimentoEntry, SLAPrioridade, Subcategoria
+from .models import Categoria, Chamado, EventoChamado, ProcedimentoEntry, SLAPrioridade, Subcategoria
 
 
 class SubcategoriaInline(admin.TabularInline):
@@ -14,12 +14,6 @@ class CategoriaAdmin(admin.ModelAdmin):
     list_display = ('nome', 'ordem')
     ordering = ('ordem', 'nome')
     inlines = [SubcategoriaInline]
-
-
-class ComentarioInline(admin.TabularInline):
-    model = Comentario
-    extra = 0
-    readonly_fields = ('autor', 'criado_em')
 
 
 class EventoChamadoInline(admin.TabularInline):
@@ -52,4 +46,4 @@ class ChamadoAdmin(admin.ModelAdmin):
     list_filter = ('status', 'prioridade', 'categoria')
     search_fields = ('codigo', 'titulo', 'descricao')
     readonly_fields = ('prioridade',)  # deriva sempre da subcategoria, ver Chamado.save()
-    inlines = [EventoChamadoInline, ProcedimentoEntryInline, ComentarioInline]
+    inlines = [EventoChamadoInline, ProcedimentoEntryInline]

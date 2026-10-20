@@ -1,0 +1,20 @@
+{% extends 'base.html' %}
+{% load chamado_extras %}
+{% comment %}Resposta do django-axes depois de AXES_FAILURE_LIMIT senhas erradas (ver config/settings.py).{% endcomment %}
+{% block title %}Acesso bloqueado{% endblock %}
+{% block content %}
+<div class="row justify-content-center hd-login-page">
+    <div class="col-md-5 col-lg-4">
+        <div class="hd-card text-center">
+            <div class="hd-login-icon"><i class="bi bi-lock"></i></div>
+            <h1 class="h4 mb-3">Acesso temporariamente bloqueado</h1>
+            <p class="text-muted-hd">
+                Foram {{ failure_limit }} tentativas com senha errada{% if username %} para o usuário <strong>{{ username }}</strong>{% endif %}.
+                Por segurança, novas tentativas estão bloqueadas{% if cooloff_timedelta %} por {{ cooloff_timedelta|duracao }}{% endif %}.
+            </p>
+            <p class="text-muted-hd mb-4">Esqueceu a senha? Peça à equipe de TI para redefini-la.</p>
+            <a href="{% url 'usuarios:login' %}" class="btn btn-outline-secondary"><i class="bi bi-arrow-left"></i> Voltar ao login</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

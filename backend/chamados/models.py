@@ -379,19 +379,6 @@ class Chamado(models.Model):
         return f'Atrasado há {texto}' if segundos < 0 else f'{texto} restantes'
 
 
-class Comentario(models.Model):
-    chamado = models.ForeignKey(Chamado, on_delete=models.CASCADE, related_name='comentarios')
-    autor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
-    texto = models.TextField()
-    criado_em = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        ordering = ['criado_em']
-
-    def __str__(self):
-        return f'Comentário de {self.autor} em #{self.chamado_id}'
-
-
 class ProcedimentoEntry(models.Model):
     """Linha do time do procedimento de atendimento — cada uma pública (visível ao
     solicitante) ou interna (restrita à equipe técnica), na ordem em que foi registrada."""
