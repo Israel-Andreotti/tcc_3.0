@@ -11,3 +11,7 @@ staticfiles/
 # Cobertura dos testes (gerados pelo coverage)
 .coverage
 htmlcov/
+
+# Material da monografia (fica só local)
+docs/documentacao-sistema.md
+docs/diagramas/
