@@ -91,7 +91,11 @@
                     <span class="text-muted-hd">{{ chamado.prazo_sla|date:'d/m/Y H:i' }} &middot; encerrado</span>
                     {% else %}
                     <div class="d-flex justify-content-between small mb-1">
-                        <span class="sla-tempo sla-{{ chamado.sla_cor }} fw-semibold">{% if chamado.sla_pausado %}<i class="bi bi-pause-fill"></i> {% endif %}{{ chamado.sla_tempo_restante_display }}</span>
+                        {% if chamado.sla_pausado %}
+                        <span class="sla-tempo sla-{{ chamado.sla_cor }} fw-semibold"><i class="bi bi-pause-fill"></i> Pausado{% if chamado.sla_estourado %} · <span class="text-danger" title="O prazo estourou antes da pausa">estourado</span>{% endif %}</span>
+                        {% else %}
+                        <span class="sla-tempo sla-{{ chamado.sla_cor }} fw-semibold">{{ chamado.sla_tempo_restante_display }}</span>
+                        {% endif %}
                         {# Pausado não tem prazo fixo: ele é estendido pelo tempo parado ao retomar. #}
                         {% if not chamado.sla_pausado %}<span class="text-muted-hd">{{ chamado.prazo_sla|date:'d/m/Y H:i' }}</span>{% endif %}
                     </div>

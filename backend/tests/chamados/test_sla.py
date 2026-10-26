@@ -7,10 +7,11 @@ from datetime import timedelta
 from unittest import mock
 
 from django.test import TestCase
+from django.urls import reverse
 from django.utils import timezone
 
 from chamados.models import Chamado, Prioridade, SLAPrioridade, prioridade_do_chamado
-from tests.fabricas import criar_chamado, criar_setor, criar_solicitante, criar_subcategoria
+from tests.fabricas import cliente, criar_chamado, criar_setor, criar_solicitante, criar_subcategoria, criar_tecnico
 
 AGORA = timezone.now()
 
@@ -129,6 +130,24 @@ class AndamentoDoSLATests(TestCase):
                 self.assertFalse(self.chamado.sla_estourado)
                 self.assertEqual(self.chamado.sla_cor, 'pausado')
                 self.assertEqual(self.chamado.sla_tempo_restante_display, 'Pausado')
+
+    def test_pausado_depois_de_estourar_continua_estourado(self):
+        with relogio(12):  # 2h depois do prazo de 10h
+            self.chamado.pausar_sla()
+        for horas in (12, 50):
+            with self.subTest(horas=horas), relogio(horas):
+                self.assertTrue(self.chamado.sla_estourado)
+                self.assertEqual(self.chamado.sla_cor, 'pausado')
+                self.assertEqual(self.chamado.sla_tempo_restante_display, 'Pausado · estourado')
+
+    def test_fila_mostra_pausado_e_estourado(self):
+        with relogio(12):
+            self.chamado.pausar_sla()
+            self.chamado.status = Chamado.Status.AGUARDANDO_SOLICITANTE
+            self.chamado.save()
+            resposta = cliente(criar_tecnico()).get(reverse('chamados:list'))
+
+        self.assertContains(resposta, 'title="O prazo estourou antes da pausa">estourado</span>')
 
     def test_retomar_estende_o_prazo_pelo_tempo_pausado(self):
         prazo_original = self.chamado.prazo_sla

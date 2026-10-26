@@ -370,8 +370,9 @@ class Chamado(models.Model):
         if not self.prazo_sla:
             return '-'
         if self.sla_pausado:
-            # Aguardando o solicitante: o relógio está parado, o tempo restante não é relevante.
-            return 'Pausado'
+            # Aguardando o solicitante: o relógio está parado, o tempo restante não é relevante — mas,
+            # se o prazo estourou antes da pausa, isso continua valendo e precisa aparecer.
+            return 'Pausado · estourado' if self.sla_estourado else 'Pausado'
         segundos = (self.prazo_sla - timezone.now()).total_seconds()
         horas = int(abs(segundos) // 3600)
         minutos = int((abs(segundos) % 3600) // 60)

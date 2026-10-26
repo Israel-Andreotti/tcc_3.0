@@ -148,7 +148,7 @@
                     {# Quando o SLA estoura. Pausado não tem horário fixo: o prazo é estendido pelo tempo parado. #}
                     <div class="small mt-1 text-nowrap">
                         {% if chamado.sla_pausado %}
-                        <span class="text-muted-hd">{{ chamado.sla_tempo_restante_display }}</span>
+                        <span class="text-muted-hd">Pausado</span>{% if chamado.sla_estourado %} · <span class="text-danger" title="O prazo estourou antes da pausa">estourado</span>{% endif %}
                         {% elif chamado.sla_estourado %}
                         <span class="text-danger" title="{{ chamado.sla_tempo_restante_display }}">Estourou {{ chamado.prazo_sla|date:'d M, H:i' }}</span>
                         {% else %}
