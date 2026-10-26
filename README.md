@@ -117,6 +117,7 @@ chamados e usuários de demonstração.
 | `LOGIN_RAPIDO` | Só para testes locais: botões "Entrar como..." sem senha. Só funciona com `DEBUG=True` | `False` |
 | `SESSAO_INATIVIDADE_MINUTOS` | Minutos sem uso até a sessão expirar | `30` |
 | `LOG_LEVEL` | Nível dos logs do Django | `WARNING` |
+| `DEMO` | Libera a simulação de demonstração (`simular_demo`) | `False` |
 
 ## Testes
 
@@ -160,6 +161,39 @@ repositório. Todo push na `master` gera um deploy automático.
 A cada inicialização, `backend/start.sh` roda `collectstatic`, aplica as migrations,
 cria ou atualiza o administrador inicial (sincronizando a senha com `DJANGO_SUPERUSER_PASSWORD`) e
 sobe o gunicorn. Os logs de erro aparecem na aba **Deploy Logs** do serviço.
+
+### Simulação para demonstração
+
+O comando `python manage.py simular_demo` executa um "passo" de um dia de trabalho simulado:
+solicitantes fictícios (login `demo.*`) abrem chamados e técnicos fictícios os atendem, pedem
+informação, fecham; os solicitantes respondem, avaliam e às vezes reabrem. Assim a fila se mexe
+sozinha e o painel de indicadores ganha dados. A simulação nunca mexe em chamados de pessoas reais
+e só roda com `DEMO=True` (localmente: `python manage.py simular_demo --forcar --passos 20`).
+
+No Railway, roda num serviço de **cron** separado, criado a partir do mesmo repositório:
+
+| Configuração | Valor |
+|---|---|
+| Root Directory | `/backend` |
+| Custom Start Command | `python manage.py simular_demo` |
+| Cron Schedule | `*/10 * * * *` (a cada 10 minutos) |
+| Variáveis | `DATABASE_URL=${{Postgres.DATABASE_URL}}`, `SECRET_KEY=${{tcc_3.0.SECRET_KEY}}`, `DEBUG=False`, `DEMO=True` |
+
+Para desligar, remova o agendamento (Cron Schedule) ou o serviço.
+
+**Cenários de validação.** `python manage.py simular_cenario --chamados 100 --repeticoes 3 --csv resultado.csv`
+simula cada cenário do início ao fim com um relógio simulado (10 minutos por passo, poucos segundos
+de execução), calcula os indicadores com o mesmo código do painel e mostra uma tabela com as
+repetições, a média e o desvio padrão. Roda dentro de uma transação desfeita no final: nada fica
+gravado. Só roda localmente (`DEBUG=True`).
+
+**Fila do sistema × FIFO.** `python manage.py comparar_filas --chamados 100 --repeticoes 3 --cargas 0.8,1.0,1.2 --csv filas.csv`
+compara a ordenação da fila do sistema (prazo de SLA mais próximo primeiro) com FIFO (ordem de
+chegada): uma equipe de 3 técnicos atende, um chamado por vez, exatamente os mesmos chamados nas duas
+políticas, em várias cargas de trabalho (utilização da equipe; acima de 100% a fila cresce, como num
+pico). Mostra nível de serviço e espera por prioridade. Com `--tecnicos 5 --expediente 8-17`, a equipe
+só atende em horário comercial (segunda a sexta) enquanto os chamados continuam chegando 24 h, e a tabela
+separa os críticos abertos dentro e fora do expediente. Também só roda localmente e não grava nada.
 
 ### Backup do banco de produção
 
